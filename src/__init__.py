@@ -1,0 +1,2 @@
+"""MAX bot application package."""
+

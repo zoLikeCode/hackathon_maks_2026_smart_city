@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light" />
+    <title>Профиль председателя</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="https://st.max.ru/js/max-web-app.js"></script>
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="brand">
+        <div class="brand-mark">УГ</div>
+        <div>
+          <p class="eyebrow">Умный город</p>
+          <h1>Профиль</h1>
+        </div>
+      </header>
+
+      <section id="loading" class="card state-card">
+        <div class="spinner" aria-hidden="true"></div>
+        <p>Загружаем подтверждённый профиль…</p>
+      </section>
+
+      <section id="error" class="card state-card hidden" role="alert">
+        <div class="status-icon status-error">!</div>
+        <h2>Профиль недоступен</h2>
+        <p id="error-message"></p>
+      </section>
+
+      <section id="profile" class="hidden">
+        <article class="hero-card">
+          <div class="status-line"><span class="status-dot"></span> Личность подтверждена</div>
+          <p id="role" class="role"></p>
+          <h2 id="full-name"></h2>
+          <p id="hoa-name" class="hoa-name"></p>
+        </article>
+
+        <article class="card details">
+          <h3>Данные профиля</h3>
+          <dl>
+            <div><dt>Адрес</dt><dd id="address"></dd></div>
+            <div><dt>Телефон</dt><dd id="phone"></dd></div>
+            <div><dt>Протокол</dt><dd id="protocol"></dd></div>
+            <div><dt>Подтверждено</dt><dd id="verified-at"></dd></div>
+          </dl>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>

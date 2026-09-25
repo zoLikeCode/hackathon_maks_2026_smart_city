@@ -1,0 +1,19 @@
+[project]
+name = "smart-city-max-bot"
+version = "0.1.0"
+description = "Бот для мессенджера MAX"
+requires-python = ">=3.11"
+dependencies = [
+    "psycopg[binary]>=3.2,<4",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["src*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
