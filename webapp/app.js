@@ -15,7 +15,10 @@ const STATUS = {
 };
 const state = {
   requests: [],
-  view: "list",
+  chairmanRequests: [],
+  view: "overview",
+  chairmanView: "requests",
+  session: null,
   month: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
   selectedDate: "",
   activeRequestId: null,
@@ -111,6 +114,7 @@ function demoRequests() {
 function updateToday() {
   const today = new Date();
   const todayIso = localISO(today);
+  $("#overview-date-label").textContent = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", year: "numeric" }).format(today);
   $("#today-day").textContent = String(today.getDate()).padStart(2, "0");
   $("#today-month").textContent = new Intl.DateTimeFormat("ru-RU", { month: "long" }).format(today).toUpperCase();
   $("#today-weekday").textContent = new Intl.DateTimeFormat("ru-RU", { weekday: "long" }).format(today);
@@ -119,9 +123,13 @@ function updateToday() {
 }
 
 function updateMetrics() {
+  const attention = state.requests.filter((request) => ["urgent", "high"].includes(request.priority) && request.status !== "done").length;
   $("#metric-total").textContent = numberLabel(state.requests.length);
-  $("#metric-urgent").textContent = numberLabel(state.requests.filter((request) => ["urgent", "high"].includes(request.priority) && request.status !== "done").length);
+  $("#metric-urgent").textContent = numberLabel(attention);
+  $("#overview-attention").textContent = numberLabel(attention);
   $("#metric-scheduled").textContent = numberLabel(state.requests.filter((request) => request.scheduled_for).length);
+  $("#profile-open-count").textContent = numberLabel(state.requests.filter((request) => request.status !== "done").length);
+  $("#profile-done-count").textContent = numberLabel(state.requests.filter((request) => request.status === "done").length);
   $("#quick-all-count").textContent = state.requests.length;
   $("#quick-urgent-count").textContent = state.requests.filter((request) => request.priority === "urgent").length;
   $("#quick-undated-count").textContent = state.requests.filter((request) => !request.scheduled_for).length;
@@ -179,7 +187,7 @@ function rowMarkup(request) {
   const code = escapeHtml(requestCode(request.id));
   return '<div class="request-row" data-id="' + id + '">'
     + '<div class="priority-cell"><span class="priority-mark priority-' + escapeHtml(request.priority) + '"></span><select class="priority-select priority-' + escapeHtml(request.priority) + '" data-priority-id="' + id + '" aria-label="Приоритет заявки № ' + code + '">' + priorityOptions(request.priority) + '</select></div>'
-    + '<button type="button" class="request-open" data-open="' + id + '"><span class="request-number">№ ' + code + ' / ' + escapeHtml(request.category) + '</span><strong>' + escapeHtml(request.title) + '</strong></button>'
+    + '<button type="button" class="request-open" data-open="' + id + '"><span class="request-number"><span class="ticket-code">№ ' + code + '</span><span class="ticket-category">' + escapeHtml(request.category) + '</span></span><strong>' + escapeHtml(request.title) + '</strong></button>'
     + '<div class="address-cell">' + escapeHtml(request.address) + '</div>'
     + '<div class="date-cell">' + (request.scheduled_for ? escapeHtml(dateLabel(request.scheduled_for)) : '<span class="muted">Не назначена</span>') + '</div>'
     + '<div class="status-cell"><span class="status-dot status-' + escapeHtml(request.status) + '"></span>' + escapeHtml(status) + '</div>'
@@ -191,6 +199,20 @@ function renderList(items) {
   $("#request-list").innerHTML = items.length
     ? items.map(rowMarkup).join("")
     : emptyMarkup(state.requests.length ? "Ничего не найдено" : "Заявок пока нет", state.requests.length ? "Измените параметры поиска или сбросьте фильтры." : "Новые обращения появятся здесь после создания председателем.");
+}
+
+function renderOverview() {
+  const focus = state.requests
+    .filter((request) => ["urgent", "high"].includes(request.priority) && request.status !== "done")
+    .sort((a, b) => (PRIORITY[a.priority]?.order ?? 4) - (PRIORITY[b.priority]?.order ?? 4)
+      || String(a.scheduled_for || "9999").localeCompare(String(b.scheduled_for || "9999")))
+    .slice(0, 3);
+  $("#overview-focus").innerHTML = focus.length ? focus.map((request, index) =>
+    '<button type="button" class="focus-item" data-open="' + escapeHtml(request.id) + '">'
+    + '<span class="focus-index">' + String(index + 1).padStart(2, "0") + '</span>'
+    + '<span class="focus-content"><span class="focus-meta">№ ' + escapeHtml(requestCode(request.id)) + ' / ' + escapeHtml(request.address) + '</span><strong>' + escapeHtml(request.title) + '</strong><span class="focus-status"><i class="priority-mark priority-' + escapeHtml(request.priority) + '"></i>' + escapeHtml(PRIORITY[request.priority]?.label || request.priority) + ' · ' + escapeHtml(STATUS[request.status] || request.status) + '</span></span>'
+    + '<span class="focus-arrow" aria-hidden="true">↗</span></button>'
+  ).join("") : emptyMarkup(state.requests.length ? "Внимание не требуется" : "Заявок пока нет", state.requests.length ? "Срочных и высокоприоритетных заявок сейчас нет." : "Новые обращения появятся здесь после создания председателем.");
 }
 
 function agendaMarkup(request, undated = false) {
@@ -273,30 +295,61 @@ function render() {
   updateFilterIndicator();
   const items = filteredRequests();
   $("#board-count").textContent = numberLabel(items.length);
+  $("#calendar-toolbar-count").textContent = numberLabel(items.length);
   $("#result-summary").textContent = "Показано " + countLabel(items.length, "заявка", "заявки", "заявок") + " из " + state.requests.length;
+  renderOverview();
   renderList(items);
   renderCalendar(items);
 }
 
 function setView(view) {
+  if (!["overview", "list", "calendar", "profile"].includes(view)) return;
+  if (view !== state.view && (view === "list" || view === "calendar")) {
+    clearAllFilters();
+    render();
+  }
   state.view = view;
-  $("#specialist").classList.toggle("calendar-active", view === "calendar");
+  $("#specialist").classList.remove("view-overview", "view-list", "view-calendar", "view-profile", "calendar-active");
+  $("#specialist").classList.add("view-" + view);
+  $("#overview-view").classList.toggle("hidden", view !== "overview");
+  $("#work-view").classList.toggle("hidden", view !== "list" && view !== "calendar");
+  $("#profile-view").classList.toggle("hidden", view !== "profile");
   $("#list-view").classList.toggle("hidden", view !== "list");
   $("#calendar-view").classList.toggle("hidden", view !== "calendar");
-  $("#board-title").firstChild.textContent = view === "list" ? "Очередь заявок " : "Календарь заявок ";
+  $("#board-heading").textContent = view === "list" ? "Заявки" : "Календарь";
+  $("#board-eyebrow").textContent = view === "list" ? "ВСЕ ОБРАЩЕНИЯ / 02" : "ПЛАН ВЫЕЗДОВ / 03";
+  $("#board-subtitle").textContent = view === "list" ? "Проверьте приоритет, статус и дату выезда." : "Выберите день, чтобы увидеть запланированные задачи.";
   $$("[data-view]").forEach((button) => {
     const active = button.dataset.view === view;
-    button.classList.toggle("active", active);
-    if (button.classList.contains("view-button")) button.setAttribute("aria-pressed", String(active));
     if (button.classList.contains("side-link") || button.closest(".mobile-nav")) {
+      button.classList.toggle("active", active);
       if (active) button.setAttribute("aria-current", "page");
       else button.removeAttribute("aria-current");
     }
   });
-  if (window.matchMedia("(max-width: 620px)").matches) {
-    const boardTop = $(".board").getBoundingClientRect().top + window.scrollY;
-    window.scrollTo(0, Math.max(0, boardTop - 12));
-  }
+  setFilterPanel(false);
+  window.scrollTo(0, 0);
+}
+
+function setChairmanView(view) {
+  if (!["requests", "create", "profile"].includes(view)) return;
+  state.chairmanView = view;
+  $$("#chairman .chairman-view").forEach((section) => section.classList.toggle("hidden", section.id !== "chairman-" + view + "-view"));
+  $$("[data-chairman-view]").forEach((button) => {
+    if (!button.closest(".chairman-mobile-nav")) return;
+    const active = button.dataset.chairmanView === view;
+    button.classList.toggle("active", active);
+    if (active) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
+  });
+  window.scrollTo(0, 0);
+}
+
+function setFilterPanel(open) {
+  $("#filter-panel").classList.toggle("hidden", !open);
+  $("#filter-backdrop").classList.toggle("hidden", !open);
+  $("#filter-toggle").setAttribute("aria-expanded", String(open));
+  document.body.classList.toggle("filter-open", open && window.matchMedia("(max-width: 620px)").matches);
 }
 
 function showToast(message) {
@@ -328,6 +381,7 @@ async function changeRequest(id, endpoint, field, value, control, successMessage
   const request = state.requests.find((item) => String(item.id) === String(id));
   if (!request || (request[field] ?? null) === (value ?? null)) return;
   const oldValue = request[field] ?? "";
+  const restoreFocus = document.activeElement === control && !$("#request-dialog").open;
   control.disabled = true;
   try {
     if (state.preview) {
@@ -340,6 +394,10 @@ async function changeRequest(id, endpoint, field, value, control, successMessage
       Object.assign(request, result.request);
     }
     render();
+    if (restoreFocus) {
+      const nextControl = $$("[data-priority-id]").find((item) => item.dataset.priorityId === String(id));
+      (nextControl || $("#filter-toggle")).focus();
+    }
     if (state.activeRequestId === request.id && $("#request-dialog").open) {
       $("#dialog-priority").value = request.priority;
       $("#dialog-status").value = request.status;
@@ -357,30 +415,69 @@ async function changeRequest(id, endpoint, field, value, control, successMessage
   }
 }
 
-function renderChairman(profile) {
+function renderChairmanRequests() {
+  const requests = [...state.chairmanRequests].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+  $("#chairman-request-list").innerHTML = requests.length ? requests.map((request) => {
+    const code = escapeHtml(requestCode(request.id));
+    return '<details class="chairman-request"><summary><span class="chairman-request-code">№ ' + code + '</span><span class="chairman-request-status"><i class="status-dot status-' + escapeHtml(request.status) + '"></i>' + escapeHtml(STATUS[request.status] || request.status) + '</span><strong>' + escapeHtml(request.title) + '</strong><span class="chairman-request-meta">' + escapeHtml(request.scheduled_for ? dateLabel(request.scheduled_for) : "Дата не назначена") + ' · ' + escapeHtml(PRIORITY[request.priority]?.label || request.priority) + '</span><span class="chairman-request-arrow" aria-hidden="true">↗</span></summary><div class="chairman-request-body"><p>' + escapeHtml(request.description || "Описание не добавлено.") + '</p><span>' + escapeHtml(request.category || "") + ' / ' + escapeHtml(request.address || "") + '</span></div></details>';
+  }).join("") : emptyMarkup("Заявок пока нет", "Создайте первую заявку, чтобы передать задачу специалисту.");
+}
+
+function renderChairman(profile, requests = []) {
+  state.chairmanRequests = requests;
   $("#chairman-name").textContent = profile.full_name;
   $("#chairman-hoa").textContent = profile.hoa_name;
   $("#chairman-address").textContent = profile.address;
   $("#chairman-phone").textContent = profile.phone;
   $("#chairman-protocol").textContent = profile.protocol_filename;
   $("#chairman-verified").textContent = new Intl.DateTimeFormat("ru-RU", { dateStyle: "long" }).format(new Date(profile.verified_at));
+  renderChairmanRequests();
   $("#loading").classList.add("hidden");
   $("#chairman").classList.remove("hidden");
+  setChairmanView("requests");
+}
+
+function renderSpecialistIdentity(session) {
+  state.session = session;
+  const name = session.display_name || "Специалист";
+  $("#specialist-name").textContent = name;
+  $("#profile-name").textContent = name;
+  $("#profile-user-id").textContent = session.user_id ? "MAX ID: " + session.user_id : "Демонстрационный режим";
+  $(".user-initial").textContent = name.charAt(0).toLocaleUpperCase("ru-RU");
+  $(".profile-avatar").textContent = name.charAt(0).toLocaleUpperCase("ru-RU");
 }
 
 function bindEvents() {
   $$("[data-view]").forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
+  $$(".brand, .mobile-brand").forEach((link) => link.addEventListener("click", (event) => {
+    event.preventDefault();
+    setView("overview");
+  }));
+  $$("[data-chairman-view]").forEach((button) => button.addEventListener("click", () => setChairmanView(button.dataset.chairmanView)));
+  $$("[data-action]").forEach((button) => button.addEventListener("click", () => {
+    if (button.dataset.action === "open-list") setView("list");
+    if (button.dataset.action === "open-calendar") setView("calendar");
+  }));
+  $("#overview-focus").addEventListener("click", (event) => {
+    const opener = event.target.closest("[data-open]");
+    if (opener) openRequest(opener.dataset.open);
+  });
   ["search", "status-filter", "priority-filter", "category-filter", "date-filter"].forEach((id) => {
     $("#" + id).addEventListener(id === "search" ? "input" : "change", render);
   });
   $("#filter-toggle").addEventListener("click", () => {
-    const panel = $("#filter-panel");
-    panel.classList.toggle("hidden");
-    $("#filter-toggle").setAttribute("aria-expanded", String(!panel.classList.contains("hidden")));
+    setFilterPanel($("#filter-panel").classList.contains("hidden"));
   });
+  $("#filter-close").addEventListener("click", () => setFilterPanel(false));
+  $("#filter-backdrop").addEventListener("click", () => setFilterPanel(false));
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !$("#filter-panel").classList.contains("hidden")) setFilterPanel(false);
+  });
+  window.matchMedia("(max-width: 620px)").addEventListener("change", () => setFilterPanel(false));
   $("#reset-filters").addEventListener("click", () => {
     clearAllFilters();
     render();
+    setFilterPanel(false);
   });
   $$("[data-quick]").forEach((button) => button.addEventListener("click", () => {
     const quick = button.dataset.quick;
@@ -388,6 +485,7 @@ function bindEvents() {
     if (quick === "urgent" || quick === "high") $("#priority-filter").value = quick;
     if (quick === "unscheduled") $("#date-filter").value = "unscheduled";
     render();
+    setFilterPanel(false);
   }));
   $(".board").addEventListener("click", (event) => {
     const opener = event.target.closest("[data-open]");
@@ -443,12 +541,16 @@ function bindEvents() {
     feedback.textContent = "Создаём заявку…";
     try {
       const result = state.preview
-        ? { request: { id: String(2000 + Math.floor(Math.random() * 8000)) } }
+        ? { request: { ...values, id: String(2000 + Math.floor(Math.random() * 8000)), address: $("#chairman-address").textContent, priority: "normal", status: "new", scheduled_for: values.scheduled_for || null, created_at: new Date().toISOString() } }
         : await api("/api/requests", { method: "POST", body: JSON.stringify(values) });
-      feedback.textContent = state.preview
-        ? "Пример: заявка № " + requestCode(result.request.id) + " создана локально."
-        : "Заявка № " + requestCode(result.request.id) + " создана и передана специалисту.";
+      state.chairmanRequests.unshift(result.request);
+      renderChairmanRequests();
+      feedback.textContent = "";
       form.reset();
+      setChairmanView("requests");
+      showToast(state.preview
+        ? "Пример: заявка № " + requestCode(result.request.id) + " создана локально."
+        : "Заявка № " + requestCode(result.request.id) + " передана специалисту.");
     } catch (error) {
       feedback.textContent = error.message;
     } finally {
@@ -465,26 +567,24 @@ async function start() {
   state.preview = ["1", "chairman", "empty"].includes(previewMode);
   if (previewMode === "chairman") {
     $(".chairman-header>span:last-child").textContent = "ПРОФИЛЬ ПРЕДСЕДАТЕЛЯ / ПРИМЕР ДАННЫХ";
-    renderChairman({
+    const profile = {
       full_name: "Анна Петрова",
       hoa_name: "ТСЖ «Садовая, 18»",
       address: "ул. Садовая, 18",
       phone: "+7 ••• ••• 45 67",
       protocol_filename: "Протокол собрания.pdf",
       verified_at: new Date().toISOString(),
-    });
+    };
+    renderChairman(profile, demoRequests().filter((request) => request.address === profile.address));
     return;
   }
   if (state.preview) {
     state.requests = previewMode === "empty" ? [] : demoRequests();
-    $("#specialist-name").textContent = previewMode === "empty" ? "Пример: пустая очередь" : "Пример данных";
+    renderSpecialistIdentity({ display_name: previewMode === "empty" ? "Пустая очередь" : "Специалист" });
     $("#loading").classList.add("hidden");
     $("#specialist").classList.remove("hidden");
-    if (window.matchMedia("(min-width: 900px)").matches) {
-      $("#filter-panel").classList.remove("hidden");
-      $("#filter-toggle").setAttribute("aria-expanded", "true");
-    }
     render();
+    setView("overview");
     return;
   }
 
@@ -501,16 +601,14 @@ async function start() {
     if (session.role === "specialist") {
       const result = await api("/api/requests");
       state.requests = Array.isArray(result.requests) ? result.requests : [];
-      $("#specialist-name").textContent = session.display_name || "Специалист";
+      renderSpecialistIdentity(session);
       $("#loading").classList.add("hidden");
       $("#specialist").classList.remove("hidden");
-      if (window.matchMedia("(min-width: 900px)").matches) {
-        $("#filter-panel").classList.remove("hidden");
-        $("#filter-toggle").setAttribute("aria-expanded", "true");
-      }
       render();
+      setView("overview");
     } else if (session.role === "chairman") {
-      renderChairman(await api("/api/profile"));
+      const [profile, requests] = await Promise.all([api("/api/profile"), api("/api/requests")]);
+      renderChairman(profile, Array.isArray(requests.requests) ? requests.requests : []);
     } else {
       showError("Для этой роли пространство пока недоступно.");
     }
