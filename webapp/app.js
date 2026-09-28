@@ -22,6 +22,7 @@ const state = {
   initData: "",
   preview: false,
 };
+let toastTimer;
 
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
@@ -121,6 +122,9 @@ function updateMetrics() {
   $("#metric-total").textContent = numberLabel(state.requests.length);
   $("#metric-urgent").textContent = numberLabel(state.requests.filter((request) => ["urgent", "high"].includes(request.priority) && request.status !== "done").length);
   $("#metric-scheduled").textContent = numberLabel(state.requests.filter((request) => request.scheduled_for).length);
+  $("#quick-all-count").textContent = state.requests.length;
+  $("#quick-urgent-count").textContent = state.requests.filter((request) => request.priority === "urgent").length;
+  $("#quick-undated-count").textContent = state.requests.filter((request) => !request.scheduled_for).length;
   updateToday();
 }
 
@@ -203,7 +207,10 @@ function renderAgenda(items) {
   $("#agenda-list").innerHTML = dayItems.length ? dayItems.map((request) => agendaMarkup(request)).join("") : '<p class="agenda-empty">На этот день заявок нет.</p>';
   const undated = items.filter((request) => !request.scheduled_for);
   $("#undated-count").textContent = String(undated.length);
-  $("#undated-list").innerHTML = undated.length ? undated.map((request) => agendaMarkup(request, true)).join("") : '<p class="agenda-empty">Все заявки запланированы.</p>';
+  const undatedEmptyText = state.requests.some((request) => !request.scheduled_for)
+    ? "По выбранным фильтрам заявок без даты нет."
+    : "Все заявки запланированы.";
+  $("#undated-list").innerHTML = undated.length ? undated.map((request) => agendaMarkup(request, true)).join("") : '<p class="agenda-empty">' + undatedEmptyText + "</p>";
 }
 
 function renderCalendar(items) {
@@ -244,6 +251,20 @@ function updateFilterIndicator() {
   $("#filter-count").textContent = activeCount;
   $("#filter-count").classList.toggle("hidden", activeCount === 0);
   $("#filter-toggle").classList.toggle("has-filters", activeCount > 0);
+  const noOtherFilters = !current.search && !current.status && !current.category;
+  const quick = noOtherFilters && current.priority === "urgent" && !current.date ? "urgent"
+    : noOtherFilters && current.priority === "high" && !current.date ? "high"
+      : noOtherFilters && current.date === "unscheduled" && !current.priority ? "unscheduled"
+        : !current.search && !current.status && !current.priority && !current.category && !current.date ? "all" : "";
+  $$("[data-quick]").forEach((button) => {
+    const active = button.dataset.quick === quick;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+}
+
+function clearAllFilters() {
+  ["search", "status-filter", "priority-filter", "category-filter", "date-filter"].forEach((id) => { $("#" + id).value = ""; });
 }
 
 function render() {
@@ -259,6 +280,7 @@ function render() {
 
 function setView(view) {
   state.view = view;
+  $("#specialist").classList.toggle("calendar-active", view === "calendar");
   $("#list-view").classList.toggle("hidden", view !== "list");
   $("#calendar-view").classList.toggle("hidden", view !== "calendar");
   $("#board-title").firstChild.textContent = view === "list" ? "Очередь заявок " : "Календарь заявок ";
@@ -271,6 +293,18 @@ function setView(view) {
       else button.removeAttribute("aria-current");
     }
   });
+  if (window.matchMedia("(max-width: 620px)").matches) {
+    const boardTop = $(".board").getBoundingClientRect().top + window.scrollY;
+    window.scrollTo(0, Math.max(0, boardTop - 12));
+  }
+}
+
+function showToast(message) {
+  const toast = $("#action-toast");
+  window.clearTimeout(toastTimer);
+  toast.textContent = message;
+  toast.classList.remove("hidden");
+  toastTimer = window.setTimeout(() => toast.classList.add("hidden"), 3200);
 }
 
 function openRequest(id) {
@@ -311,6 +345,8 @@ async function changeRequest(id, endpoint, field, value, control, successMessage
       $("#dialog-status").value = request.status;
       $("#dialog-date").value = request.scheduled_for || "";
       $("#dialog-feedback").textContent = successMessage;
+    } else if (field === "priority") {
+      showToast("Приоритет заявки № " + requestCode(request.id) + " сохранён. Порядок очереди обновлён.");
     }
   } catch (error) {
     control.value = oldValue;
@@ -343,9 +379,16 @@ function bindEvents() {
     $("#filter-toggle").setAttribute("aria-expanded", String(!panel.classList.contains("hidden")));
   });
   $("#reset-filters").addEventListener("click", () => {
-    ["search", "status-filter", "priority-filter", "category-filter", "date-filter"].forEach((id) => { $("#" + id).value = ""; });
+    clearAllFilters();
     render();
   });
+  $$("[data-quick]").forEach((button) => button.addEventListener("click", () => {
+    const quick = button.dataset.quick;
+    clearAllFilters();
+    if (quick === "urgent" || quick === "high") $("#priority-filter").value = quick;
+    if (quick === "unscheduled") $("#date-filter").value = "unscheduled";
+    render();
+  }));
   $(".board").addEventListener("click", (event) => {
     const opener = event.target.closest("[data-open]");
     if (opener) openRequest(opener.dataset.open);
@@ -357,6 +400,9 @@ function bindEvents() {
         state.month = new Date(date.getFullYear(), date.getMonth(), 1);
       }
       renderCalendar(filteredRequests());
+      if (window.matchMedia("(max-width: 620px)").matches) {
+        $(".calendar-agenda").scrollIntoView({ behavior: "smooth", block: "start" });
+      }
     }
   });
   $(".board").addEventListener("change", (event) => {

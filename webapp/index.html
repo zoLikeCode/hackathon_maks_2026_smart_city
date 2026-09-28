@@ -82,6 +82,12 @@
               <label class="search-field"><span class="search-icon" aria-hidden="true"></span><span class="sr-only">Поиск заявок</span><input id="search" type="search" placeholder="Поиск по заявкам и адресам" autocomplete="off" /></label>
               <button id="filter-toggle" class="filter-toggle" type="button" aria-expanded="false" aria-controls="filter-panel"><span class="filter-icon" aria-hidden="true">☷</span> Фильтры <span id="filter-count" class="filter-count hidden">0</span></button>
             </div>
+            <div class="quick-filters" role="group" aria-label="Быстрые фильтры заявок">
+              <button type="button" data-quick="all" class="active" aria-pressed="true">Все <span id="quick-all-count">0</span></button>
+              <button type="button" data-quick="urgent" aria-pressed="false">Срочно <span id="quick-urgent-count">0</span></button>
+              <button type="button" data-quick="high" aria-pressed="false">Высокий</button>
+              <button type="button" data-quick="unscheduled" aria-pressed="false">Без даты <span id="quick-undated-count">0</span></button>
+            </div>
             <div id="filter-panel" class="filter-panel hidden">
               <label>СТАТУС<select id="status-filter"><option value="">Все статусы</option><option value="new">Новая</option><option value="in_progress">В работе</option><option value="waiting">Ожидает</option><option value="done">Завершена</option></select></label>
               <label>ПРИОРИТЕТ<select id="priority-filter"><option value="">Все приоритеты</option><option value="urgent">Срочно</option><option value="high">Высокий</option><option value="normal">Обычный</option><option value="low">Низкий</option></select></label>
@@ -130,5 +136,6 @@
       </div>
       <p id="dialog-feedback" class="dialog-feedback" role="status"></p>
     </dialog>
+    <div id="action-toast" class="action-toast hidden" role="status" aria-live="polite"></div>
   </body>
 </html>
