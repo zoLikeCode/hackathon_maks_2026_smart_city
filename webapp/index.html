@@ -3,12 +3,12 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="color-scheme" content="dark" />
-    <meta name="theme-color" content="#101715" />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#e7f3f6" />
     <title>Умный город — рабочее пространство</title>
-    <link rel="stylesheet" href="/styles.css?v=night-3" />
+    <link rel="stylesheet" href="/styles.css?v=glass-2" />
     <script src="https://st.max.ru/js/max-web-app.js"></script>
-    <script src="/app.js?v=night-3" defer></script>
+    <script src="/app.js?v=glass-2" defer></script>
   </head>
   <body>
     <svg class="icon-sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
@@ -17,6 +17,20 @@
       <symbol id="icon-calendar" viewBox="0 0 24 24"><path d="M4 6h16v15H4zM8 3v6m8-6v6M4 10h16M8 14h2m4 0h2m-8 4h2" /></symbol>
       <symbol id="icon-profile" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5" /><path d="M4.5 21c.5-4.5 3-7 7.5-7s7 2.5 7.5 7" /></symbol>
       <symbol id="icon-plus" viewBox="0 0 24 24"><path d="M12 4v16M4 12h16" /></symbol>
+    </svg>
+    <svg class="city-route-map" aria-hidden="true" viewBox="0 0 1440 960" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+      <g class="map-streets">
+        <path d="M-80 172H196L258 224H498L558 165H788L865 91H1516" />
+        <path d="M-45 362H244L307 306H516L582 370H822L912 297H1490" />
+        <path d="M-60 592H214L278 535H466L542 606H735L816 544H1167L1239 474H1490" />
+        <path d="M-60 800H289L356 741H614L695 816H944L1008 749H1490" />
+        <path d="M180-60V171L251 225V452L278 535V1010" />
+        <path d="M558-60V165L516 306V515L542 606V1010" />
+        <path d="M866-60V91L822 226V370L816 544V1010" />
+        <path d="M1190-60V184L1117 265V544L1167 606V1010" />
+      </g>
+      <path class="map-route" d="M258 224H498L558 165H788L865 91M822 370L912 297H1190M278 535H466L542 606H735L816 544" />
+      <g class="map-stops"><circle cx="258" cy="224" r="5" /><circle cx="558" cy="165" r="5" /><circle cx="865" cy="91" r="5" /><circle cx="822" cy="370" r="5" /><circle cx="816" cy="544" r="5" /></g>
     </svg>
 
     <div id="loading" class="system-state" role="status">
@@ -62,19 +76,19 @@
 
         <main class="main-content">
           <section id="overview-view" class="overview-view" aria-labelledby="overview-title">
-            <div class="overview-topline"><span class="route-kicker"><span class="route-kicker-dot"></span> ДИСПЕТЧЕРСКАЯ / ОНЛАЙН</span><span id="overview-date-label">—</span></div>
+            <div class="overview-topline"><span class="route-kicker"><span class="route-kicker-dot"></span> ГОРОД В РАБОТЕ</span><span id="overview-date-label">—</span></div>
             <div class="overview-hero">
               <div class="overview-title">
                 <h1 id="overview-title">Сегодня<span class="accent">.</span></h1>
                 <p id="overview-lead">Загружаем рабочую очередь</p>
               </div>
               <div class="overview-signal">
-                <span class="signal-eyebrow">НА КОНТРОЛЕ</span>
+                <span class="signal-eyebrow">ТРЕБУЮТ ВНИМАНИЯ</span>
                 <strong id="overview-attention">00</strong>
                 <button type="button" data-action="open-list">Вся очередь <span aria-hidden="true">↗</span></button>
               </div>
             </div>
-            <div class="overview-section-head"><div><p class="section-kicker">ПРИОРИТЕТ / 01</p><h2>Требуют внимания<span class="accent">.</span></h2></div><button type="button" data-action="open-list">Все заявки <span aria-hidden="true">↗</span></button></div>
+            <div class="overview-section-head"><div><p class="section-kicker">ПРИОРИТЕТНАЯ ОЧЕРЕДЬ</p><h2>Сначала важное<span class="accent">.</span></h2></div><button type="button" data-action="open-list">Все заявки <span aria-hidden="true">↗</span></button></div>
             <div id="overview-focus" class="focus-list"></div>
             <div class="overview-bottom">
               <div class="today-panel"><p>СЕГОДНЯ / ВЫЕЗДЫ</p><div class="today-panel-main"><strong id="today-day">—</strong><div><span id="today-month">—</span><span id="today-weekday">—</span></div></div><span id="today-scheduled">0 заявок на сегодня</span></div>
@@ -87,7 +101,7 @@
             <div class="toolbar"><span class="calendar-screen-label">Календарь <span id="calendar-toolbar-count">00</span></span><label class="search-field"><span class="search-icon" aria-hidden="true"></span><span class="sr-only">Поиск заявок</span><input id="search" type="search" placeholder="Найти заявку или адрес" autocomplete="off" /></label><button id="filter-toggle" class="filter-toggle" type="button" aria-expanded="false" aria-controls="filter-panel"><span class="filter-icon" aria-hidden="true">☷</span> Фильтры <span id="filter-count" class="filter-count hidden">0</span></button></div>
             <div class="quick-filters" role="group" aria-label="Быстрые фильтры заявок"><button type="button" data-quick="all" class="active" aria-pressed="true">Все <span id="quick-all-count">0</span></button><button type="button" data-quick="urgent" aria-pressed="false">Срочно <span id="quick-urgent-count">0</span></button><button type="button" data-quick="high" aria-pressed="false">Высокий</button><button type="button" data-quick="unscheduled" aria-pressed="false">Без даты <span id="quick-undated-count">0</span></button></div>
             <button id="filter-backdrop" class="filter-backdrop hidden" type="button" aria-label="Закрыть фильтры"></button>
-            <div id="filter-panel" class="filter-panel hidden"><div class="filter-panel-title"><strong>Фильтры</strong><button id="filter-close" type="button" aria-label="Закрыть фильтры">×</button></div><label>СТАТУС<select id="status-filter"><option value="">Все статусы</option><option value="open">Активные</option><option value="new">Новая</option><option value="in_progress">В работе</option><option value="waiting">Ожидает</option><option value="done">Завершена</option></select></label><label>ПРИОРИТЕТ<select id="priority-filter"><option value="">Все приоритеты</option><option value="urgent">Срочно</option><option value="high">Высокий</option><option value="normal">Обычный</option><option value="low">Низкий</option></select></label><label>КАТЕГОРИЯ<select id="category-filter"><option value="">Все категории</option></select></label><label>ДАТА<select id="date-filter"><option value="">Все заявки</option><option value="scheduled">С датой</option><option value="unscheduled">Без даты</option></select></label><button id="reset-filters" class="reset-filters" type="button">Сбросить все <span aria-hidden="true">↗</span></button></div>
+            <div id="filter-panel" class="filter-panel hidden"><div class="filter-panel-title"><strong>Фильтры</strong><button id="filter-close" type="button" aria-label="Закрыть фильтры">×</button></div><label>СТАТУС<select id="status-filter"><option value="">Все статусы</option><option value="open">Активные</option><option value="new">Новая</option><option value="in_progress">В работе</option><option value="waiting">Ожидает</option><option value="done">Завершена</option></select></label><label>ПРИОРИТЕТ<select id="priority-filter"><option value="">Любой</option><option value="urgent">Срочно</option><option value="high">Высокий</option><option value="normal">Обычный</option><option value="low">Низкий</option></select></label><label>КАТЕГОРИЯ<select id="category-filter"><option value="">Любая</option></select></label><label>ДАТА<select id="date-filter"><option value="">Все заявки</option><option value="scheduled">С датой</option><option value="unscheduled">Без даты</option></select></label><button id="reset-filters" class="reset-filters" type="button">Сбросить все <span aria-hidden="true">↗</span></button></div>
             <p id="result-summary" class="result-summary" aria-live="polite"></p>
             <div id="list-view" class="list-view"><div class="list-head"><span>ПРИОРИТЕТ</span><span>ЗАЯВКА</span><span>АДРЕС</span><span>ДАТА ВЫЕЗДА</span><span>СТАТУС</span><span></span></div><div id="request-list" class="request-list"></div></div>
             <div id="calendar-view" class="calendar-view hidden"><div class="calendar-toolbar"><div><p class="calendar-eyebrow">ПЛАН ВЫЕЗДОВ</p><h2 id="calendar-title">—</h2></div><div class="calendar-controls"><button id="calendar-prev" type="button" aria-label="Предыдущий месяц">←</button><button id="calendar-today" type="button">Сегодня</button><button id="calendar-next" type="button" aria-label="Следующий месяц">→</button></div></div><div id="calendar-mobile-agenda" class="calendar-mobile-agenda"></div><div class="calendar-layout"><div class="calendar-sheet"><div class="weekday-row"><span>ПН</span><span>ВТ</span><span>СР</span><span>ЧТ</span><span>ПТ</span><span>СБ</span><span>ВС</span></div><div id="calendar-grid" class="calendar-grid"></div></div><aside class="calendar-agenda"><p class="agenda-kicker">ПОВЕСТКА ДНЯ</p><h3 id="agenda-date">—</h3><div id="agenda-list" class="agenda-list"></div><div class="undated-heading"><span>БЕЗ ДАТЫ</span><span id="undated-count">0</span></div><div id="undated-list" class="undated-list"></div></aside></div></div>

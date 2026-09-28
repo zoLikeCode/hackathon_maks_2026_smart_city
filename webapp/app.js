@@ -144,7 +144,7 @@ function updateCategories() {
   const select = $("#category-filter");
   const selected = select.value;
   const categories = [...new Set(state.requests.map((request) => request.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
-  select.innerHTML = '<option value="">Все категории</option>' + categories.map((category) => '<option value="' + escapeHtml(category) + '">' + escapeHtml(category) + "</option>").join("");
+  select.innerHTML = '<option value="">Любая</option>' + categories.map((category) => '<option value="' + escapeHtml(category) + '">' + escapeHtml(category) + "</option>").join("");
   select.value = categories.includes(selected) ? selected : "";
 }
 
@@ -356,10 +356,26 @@ function setChairmanView(view) {
 }
 
 function setFilterPanel(open) {
-  $("#filter-panel").classList.toggle("hidden", !open);
+  const panel = $("#filter-panel");
+  const toggle = $("#filter-toggle");
+  const wasOpen = !panel.classList.contains("hidden");
+  const mobile = window.matchMedia("(max-width: 620px)").matches;
+  const restoreFocus = wasOpen && !open && panel.contains(document.activeElement);
+  panel.classList.toggle("hidden", !open);
   $("#filter-backdrop").classList.toggle("hidden", !open);
-  $("#filter-toggle").setAttribute("aria-expanded", String(open));
-  document.body.classList.toggle("filter-open", open && window.matchMedia("(max-width: 620px)").matches);
+  toggle.setAttribute("aria-expanded", String(open));
+  document.body.classList.toggle("filter-open", open && mobile);
+  if (open && mobile) {
+    panel.setAttribute("role", "dialog");
+    panel.setAttribute("aria-modal", "true");
+    panel.setAttribute("aria-label", "Фильтры заявок");
+    $("#filter-close").focus();
+  } else {
+    panel.removeAttribute("role");
+    panel.removeAttribute("aria-modal");
+    panel.removeAttribute("aria-label");
+    if (restoreFocus) toggle.focus();
+  }
 }
 
 function showToast(message) {
@@ -482,6 +498,18 @@ function bindEvents() {
   $("#filter-backdrop").addEventListener("click", () => setFilterPanel(false));
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !$("#filter-panel").classList.contains("hidden")) setFilterPanel(false);
+    if (event.key !== "Tab" || !window.matchMedia("(max-width: 620px)").matches || $("#filter-panel").classList.contains("hidden")) return;
+    const controls = $$("#filter-panel button, #filter-panel select").filter((item) => !item.disabled);
+    if (!controls.length) return;
+    const first = controls[0];
+    const last = controls[controls.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
   });
   window.matchMedia("(max-width: 620px)").addEventListener("change", () => setFilterPanel(false));
   $("#reset-filters").addEventListener("click", () => {
