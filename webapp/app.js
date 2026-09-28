@@ -124,14 +124,18 @@ function updateToday() {
 
 function updateMetrics() {
   const attention = state.requests.filter((request) => ["urgent", "high"].includes(request.priority) && request.status !== "done").length;
+  const open = state.requests.filter((request) => request.status !== "done").length;
   $("#metric-total").textContent = numberLabel(state.requests.length);
   $("#metric-urgent").textContent = numberLabel(attention);
   $("#overview-attention").textContent = numberLabel(attention);
+  $("#overview-lead").textContent = open
+    ? countLabel(open, "активная заявка", "активные заявки", "активных заявок") + " в работе"
+    : "Активных заявок сейчас нет";
   $("#metric-scheduled").textContent = numberLabel(state.requests.filter((request) => request.scheduled_for).length);
-  $("#profile-open-count").textContent = numberLabel(state.requests.filter((request) => request.status !== "done").length);
+  $("#profile-open-count").textContent = numberLabel(open);
   $("#profile-done-count").textContent = numberLabel(state.requests.filter((request) => request.status === "done").length);
   $("#quick-all-count").textContent = state.requests.length;
-  $("#quick-urgent-count").textContent = state.requests.filter((request) => request.priority === "urgent").length;
+  $("#quick-urgent-count").textContent = state.requests.filter((request) => request.priority === "urgent" && request.status !== "done").length;
   $("#quick-undated-count").textContent = state.requests.filter((request) => !request.scheduled_for).length;
   updateToday();
 }
@@ -159,11 +163,12 @@ function filteredRequests() {
   return state.requests.filter((request) => {
     const haystack = [request.id, request.title, request.address, request.category, request.description, request.assignee].join(" ").toLocaleLowerCase("ru-RU");
     return (!current.search || haystack.includes(current.search))
-      && (!current.status || request.status === current.status)
+      && (!current.status || (current.status === "open" ? request.status !== "done" : request.status === current.status))
       && (!current.priority || request.priority === current.priority)
       && (!current.category || request.category === current.category)
       && (!current.date || (current.date === "scheduled" ? Boolean(request.scheduled_for) : !request.scheduled_for));
   }).sort((a, b) => {
+    if ((a.status === "done") !== (b.status === "done")) return a.status === "done" ? 1 : -1;
     const rank = (PRIORITY[a.priority]?.order ?? 4) - (PRIORITY[b.priority]?.order ?? 4);
     if (rank) return rank;
     if (!a.scheduled_for && !b.scheduled_for) return b.created_at.localeCompare(a.created_at);
@@ -210,7 +215,7 @@ function renderOverview() {
   $("#overview-focus").innerHTML = focus.length ? focus.map((request, index) =>
     '<button type="button" class="focus-item" data-open="' + escapeHtml(request.id) + '">'
     + '<span class="focus-index">' + String(index + 1).padStart(2, "0") + '</span>'
-    + '<span class="focus-content"><span class="focus-meta">№ ' + escapeHtml(requestCode(request.id)) + ' / ' + escapeHtml(request.address) + '</span><strong>' + escapeHtml(request.title) + '</strong><span class="focus-status"><i class="priority-mark priority-' + escapeHtml(request.priority) + '"></i>' + escapeHtml(PRIORITY[request.priority]?.label || request.priority) + ' · ' + escapeHtml(STATUS[request.status] || request.status) + '</span></span>'
+    + '<span class="focus-content"><span class="focus-meta">№ ' + escapeHtml(requestCode(request.id)) + ' · ' + escapeHtml(request.address) + '</span><strong>' + escapeHtml(request.title) + '</strong><span class="focus-status"><i class="priority-mark priority-' + escapeHtml(request.priority) + '"></i>' + escapeHtml(PRIORITY[request.priority]?.label || request.priority) + ' · ' + escapeHtml(STATUS[request.status] || request.status) + (request.scheduled_for ? ' · ' + escapeHtml(dateLabel(request.scheduled_for)) : ' · без даты') + '</span></span>'
     + '<span class="focus-arrow" aria-hidden="true">↗</span></button>'
   ).join("") : emptyMarkup(state.requests.length ? "Внимание не требуется" : "Заявок пока нет", state.requests.length ? "Срочных и высокоприоритетных заявок сейчас нет." : "Новые обращения появятся здесь после создания председателем.");
 }
@@ -240,10 +245,19 @@ function renderCalendar(items) {
   const month = state.month.getMonth();
   const monthTitle = new Intl.DateTimeFormat("ru-RU", { month: "long", year: "numeric" }).format(state.month);
   $("#calendar-title").textContent = monthTitle.charAt(0).toUpperCase() + monthTitle.slice(1);
+  const monthPrefix = year + "-" + String(month + 1).padStart(2, "0") + "-";
+  const monthItems = items.filter((request) => request.scheduled_for?.startsWith(monthPrefix));
+  const todayIso = localISO(new Date());
+  const upcoming = monthItems.filter((request) => request.status !== "done" && request.scheduled_for >= todayIso);
+  const monthActive = monthItems.filter((request) => request.status !== "done");
+  const previewItems = (upcoming.length ? upcoming : monthActive.length ? monthActive : monthItems).sort((a, b) =>
+    a.scheduled_for.localeCompare(b.scheduled_for) || (PRIORITY[a.priority]?.order ?? 4) - (PRIORITY[b.priority]?.order ?? 4)
+  ).slice(0, 3);
+  $("#calendar-mobile-agenda").innerHTML = '<div class="mobile-agenda-head"><span>ПО ДАТАМ</span><span>' + countLabel(monthItems.length, "заявка", "заявки", "заявок") + ' в месяце</span></div>'
+    + (previewItems.length ? previewItems.map((request) => '<button type="button" class="mobile-agenda-item" data-open="' + escapeHtml(request.id) + '"><span class="mobile-agenda-date"><strong>' + escapeHtml(parseDay(request.scheduled_for).getDate()) + '</strong><small>' + escapeHtml(dateLabel(request.scheduled_for, { month: "short" })) + '</small></span><span class="mobile-agenda-body"><strong>' + escapeHtml(request.title) + '</strong><small>' + escapeHtml(request.address) + ' · ' + escapeHtml(PRIORITY[request.priority]?.label || request.priority) + (request.status === "done" ? ' · Завершена' : '') + '</small></span><span class="mobile-agenda-arrow" aria-hidden="true">↗</span></button>').join("") : '<p class="mobile-agenda-empty">Запланированных выездов пока нет.</p>');
   const firstWeekday = (new Date(year, month, 1).getDay() + 6) % 7;
   const lastDay = new Date(year, month + 1, 0).getDate();
   const cells = Math.ceil((firstWeekday + lastDay) / 7) * 7;
-  const todayIso = localISO(new Date());
   const byDay = new Map();
   for (const request of items) {
     if (!request.scheduled_for) continue;
@@ -273,10 +287,10 @@ function updateFilterIndicator() {
   $("#filter-count").textContent = activeCount;
   $("#filter-count").classList.toggle("hidden", activeCount === 0);
   $("#filter-toggle").classList.toggle("has-filters", activeCount > 0);
-  const noOtherFilters = !current.search && !current.status && !current.category;
-  const quick = noOtherFilters && current.priority === "urgent" && !current.date ? "urgent"
-    : noOtherFilters && current.priority === "high" && !current.date ? "high"
-      : noOtherFilters && current.date === "unscheduled" && !current.priority ? "unscheduled"
+  const noOtherFilters = !current.search && !current.category;
+  const quick = noOtherFilters && current.status === "open" && current.priority === "urgent" && !current.date ? "urgent"
+    : noOtherFilters && current.status === "open" && current.priority === "high" && !current.date ? "high"
+      : noOtherFilters && !current.status && current.date === "unscheduled" && !current.priority ? "unscheduled"
         : !current.search && !current.status && !current.priority && !current.category && !current.date ? "all" : "";
   $$("[data-quick]").forEach((button) => {
     const active = button.dataset.quick === quick;
@@ -304,10 +318,6 @@ function render() {
 
 function setView(view) {
   if (!["overview", "list", "calendar", "profile"].includes(view)) return;
-  if (view !== state.view && (view === "list" || view === "calendar")) {
-    clearAllFilters();
-    render();
-  }
   state.view = view;
   $("#specialist").classList.remove("view-overview", "view-list", "view-calendar", "view-profile", "calendar-active");
   $("#specialist").classList.add("view-" + view);
@@ -482,7 +492,10 @@ function bindEvents() {
   $$("[data-quick]").forEach((button) => button.addEventListener("click", () => {
     const quick = button.dataset.quick;
     clearAllFilters();
-    if (quick === "urgent" || quick === "high") $("#priority-filter").value = quick;
+    if (quick === "urgent" || quick === "high") {
+      $("#priority-filter").value = quick;
+      $("#status-filter").value = "open";
+    }
     if (quick === "unscheduled") $("#date-filter").value = "unscheduled";
     render();
     setFilterPanel(false);
@@ -566,7 +579,7 @@ async function start() {
   const previewMode = ["localhost", "127.0.0.1"].includes(window.location.hostname) ? params.get("preview") : null;
   state.preview = ["1", "chairman", "empty"].includes(previewMode);
   if (previewMode === "chairman") {
-    $(".chairman-header>span:last-child").textContent = "ПРОФИЛЬ ПРЕДСЕДАТЕЛЯ / ПРИМЕР ДАННЫХ";
+    $(".chairman-header>span:last-child").textContent = "ПРЕДСЕДАТЕЛЬ / ДЕМО";
     const profile = {
       full_name: "Анна Петрова",
       hoa_name: "ТСЖ «Садовая, 18»",
