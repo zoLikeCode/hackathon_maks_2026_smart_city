@@ -4,50 +4,131 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="light" />
-    <title>Профиль председателя</title>
+    <title>Умный город — рабочее пространство</title>
     <link rel="stylesheet" href="/styles.css" />
     <script src="https://st.max.ru/js/max-web-app.js"></script>
     <script src="/app.js" defer></script>
   </head>
   <body>
-    <main class="shell">
-      <header class="brand">
-        <div class="brand-mark">УГ</div>
-        <div>
-          <p class="eyebrow">Умный город</p>
-          <h1>Профиль</h1>
+    <div id="loading" class="system-state" role="status">
+      <span class="state-mark" aria-hidden="true">У<span>.</span></span>
+      <span class="state-loader" aria-hidden="true"></span>
+      <p>Открываем рабочее пространство</p>
+    </div>
+
+    <div id="error" class="system-state hidden" role="alert">
+      <span class="state-mark" aria-hidden="true">У<span>.</span></span>
+      <p class="state-kicker">ДОСТУП К ПРОСТРАНСТВУ</p>
+      <h1>Не удалось войти<span class="accent">.</span></h1>
+      <p id="error-message" class="state-message"></p>
+    </div>
+
+    <div id="specialist" class="app hidden">
+      <aside class="sidebar">
+        <a class="brand" href="#" aria-label="Умный город, заявки">
+          <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+          <span class="brand-name">УМНЫЙ<br />ГОРОД<span>.</span></span>
+        </a>
+        <div class="sidebar-rule"></div>
+        <p class="nav-caption">РАБОЧЕЕ ПРОСТРАНСТВО</p>
+        <nav class="side-nav" aria-label="Разделы специалиста">
+          <button class="side-link active" type="button" data-view="list" aria-current="page"><span class="nav-index">01</span><span>Заявки</span><span class="nav-arrow">↗</span></button>
+          <button class="side-link" type="button" data-view="calendar"><span class="nav-index">02</span><span>Календарь</span><span class="nav-arrow">↗</span></button>
+        </nav>
+        <div class="sidebar-bottom">
+          <span class="sidebar-line"></span>
+          <p>Сервис городских<br />обращений</p>
+          <span class="sidebar-edition">ДИСПЕТЧЕРСКА / 2026</span>
         </div>
-      </header>
+      </aside>
 
-      <section id="loading" class="card state-card">
-        <div class="spinner" aria-hidden="true"></div>
-        <p>Загружаем подтверждённый профиль…</p>
-      </section>
+      <div class="workspace">
+        <header class="topbar">
+          <a class="mobile-brand" href="#" aria-label="Умный город, заявки">УМНЫЙ ГОРОД<span>.</span></a>
+          <span class="topbar-caption">СИСТЕМА ГОРОДСКИХ ОБРАЩЕНИЙ</span>
+          <div class="topbar-user"><span class="online-dot"></span><span id="specialist-name">Специалист</span><span class="user-initial" aria-hidden="true">С</span></div>
+        </header>
 
-      <section id="error" class="card state-card hidden" role="alert">
-        <div class="status-icon status-error">!</div>
-        <h2>Профиль недоступен</h2>
-        <p id="error-message"></p>
-      </section>
+        <main class="main-content">
+          <section class="intro" aria-labelledby="page-title">
+            <div class="intro-copy">
+              <p class="overline"><span class="overline-square"></span> ПАНЕЛЬ СПЕЦИАЛИСТА <span class="overline-separator">/</span> ЗАЯВКИ ГОРОДА</p>
+              <h1 id="page-title">Каждая заявка<br /><em>под контролем</em><span class="accent">.</span></h1>
+              <p class="intro-description">Приоритеты, сроки и выезды — в одном рабочем пространстве.</p>
+            </div>
+            <div class="date-panel" aria-label="Сводка на сегодня">
+              <div class="date-panel-top"><span>СЕГОДНЯ</span><span class="date-panel-cross" aria-hidden="true">✳</span></div>
+              <div class="date-panel-main"><strong id="today-day">—</strong><div><span id="today-month">—</span><span id="today-weekday">—</span></div></div>
+              <div class="date-panel-bottom"><span id="today-scheduled">0 заявок в календаре</span><span aria-hidden="true">↗</span></div>
+            </div>
+          </section>
 
-      <section id="profile" class="hidden">
-        <article class="hero-card">
-          <div class="status-line"><span class="status-dot"></span> Личность подтверждена</div>
-          <p id="role" class="role"></p>
-          <h2 id="full-name"></h2>
-          <p id="hoa-name" class="hoa-name"></p>
-        </article>
+          <section class="metrics" aria-label="Сводка заявок">
+            <div class="metric"><span class="metric-label">ВСЕГО ЗАЯВОК</span><strong id="metric-total">00</strong><span class="metric-index">01 / 03</span></div>
+            <div class="metric"><span class="metric-label">ТРЕБУЮТ ВНИМАНИЯ</span><strong id="metric-urgent">00</strong><span class="metric-index">02 / 03</span></div>
+            <div class="metric"><span class="metric-label">В КАЛЕНДАРЕ</span><strong id="metric-scheduled">00</strong><span class="metric-index">03 / 03</span></div>
+          </section>
 
-        <article class="card details">
-          <h3>Данные профиля</h3>
-          <dl>
-            <div><dt>Адрес</dt><dd id="address"></dd></div>
-            <div><dt>Телефон</dt><dd id="phone"></dd></div>
-            <div><dt>Протокол</dt><dd id="protocol"></dd></div>
-            <div><dt>Подтверждено</dt><dd id="verified-at"></dd></div>
-          </dl>
-        </article>
-      </section>
-    </main>
+          <section class="board" aria-labelledby="board-title">
+            <div class="board-header">
+              <div><p class="section-kicker">РАБОЧАЯ ОБЛАСТЬ <span>/ 01</span></p><h2 id="board-title">Очередь заявок <span id="board-count">00</span></h2></div>
+              <div class="view-toggle" role="group" aria-label="Вид заявок">
+                <button type="button" data-view="list" class="view-button active" aria-pressed="true">Список</button>
+                <button type="button" data-view="calendar" class="view-button" aria-pressed="false">Календарь</button>
+              </div>
+            </div>
+
+            <div class="toolbar">
+              <label class="search-field"><span class="search-icon" aria-hidden="true"></span><span class="sr-only">Поиск заявок</span><input id="search" type="search" placeholder="Поиск по заявкам и адресам" autocomplete="off" /></label>
+              <button id="filter-toggle" class="filter-toggle" type="button" aria-expanded="false" aria-controls="filter-panel"><span class="filter-icon" aria-hidden="true">☷</span> Фильтры <span id="filter-count" class="filter-count hidden">0</span></button>
+            </div>
+            <div id="filter-panel" class="filter-panel hidden">
+              <label>СТАТУС<select id="status-filter"><option value="">Все статусы</option><option value="new">Новая</option><option value="in_progress">В работе</option><option value="waiting">Ожидает</option><option value="done">Завершена</option></select></label>
+              <label>ПРИОРИТЕТ<select id="priority-filter"><option value="">Все приоритеты</option><option value="urgent">Срочно</option><option value="high">Высокий</option><option value="normal">Обычный</option><option value="low">Низкий</option></select></label>
+              <label>КАТЕГОРИЯ<select id="category-filter"><option value="">Все категории</option></select></label>
+              <label>ДАТА<select id="date-filter"><option value="">Все заявки</option><option value="scheduled">С датой</option><option value="unscheduled">Без даты</option></select></label>
+              <button id="reset-filters" class="reset-filters" type="button">Сбросить ↗</button>
+            </div>
+            <p id="result-summary" class="result-summary" aria-live="polite"></p>
+
+            <div id="list-view" class="list-view">
+              <div class="list-head"><span>ПРИОРИТЕТ</span><span>ЗАЯВКА</span><span>АДРЕС</span><span>ДАТА ВЫЕЗДА</span><span>СТАТУС</span><span></span></div>
+              <div id="request-list" class="request-list"></div>
+            </div>
+
+            <div id="calendar-view" class="calendar-view hidden">
+              <div class="calendar-toolbar"><div><p class="calendar-eyebrow">ПЛАН ВЫЕЗДОВ</p><h3 id="calendar-title">—</h3></div><div class="calendar-controls"><button id="calendar-prev" type="button" aria-label="Предыдущий месяц">←</button><button id="calendar-today" type="button">Сегодня</button><button id="calendar-next" type="button" aria-label="Следующий месяц">→</button></div></div>
+              <div class="calendar-layout">
+                <div class="calendar-sheet"><div class="weekday-row"><span>ПН</span><span>ВТ</span><span>СР</span><span>ЧТ</span><span>ПТ</span><span>СБ</span><span>ВС</span></div><div id="calendar-grid" class="calendar-grid"></div></div>
+                <aside class="calendar-agenda"><p class="agenda-kicker">ПОВЕСТКА ДНЯ</p><h4 id="agenda-date">—</h4><div id="agenda-list" class="agenda-list"></div><div class="undated-heading"><span>БЕЗ ДАТЫ</span><span id="undated-count">0</span></div><div id="undated-list" class="undated-list"></div></aside>
+              </div>
+            </div>
+          </section>
+          <footer class="workspace-footer"><span>УМНЫЙ ГОРОД / РАБОЧЕЕ ПРОСТРАНСТВО</span><span>СОЗДАНО ДЛЯ ЗАБОТЫ О ГОРОДЕ</span></footer>
+        </main>
+        <nav class="mobile-nav" aria-label="Разделы"><button type="button" data-view="list" class="active" aria-current="page"><span>☰</span>Заявки</button><button type="button" data-view="calendar"><span>▦</span>Календарь</button></nav>
+      </div>
+    </div>
+
+    <div id="chairman" class="chairman-page hidden">
+      <header class="chairman-header"><span class="chairman-brand">УМНЫЙ ГОРОД<span>.</span></span><span>ПРОФИЛЬ ПРЕДСЕДАТЕЛЯ</span></header>
+      <main class="chairman-main"><p class="overline"><span class="overline-square"></span> ПОДТВЕРЖДЁННЫЙ ПРОФИЛЬ</p><h1 id="chairman-name">—</h1><p id="chairman-hoa" class="chairman-subtitle">—</p>
+        <section class="chairman-grid"><div class="chairman-details"><p class="section-kicker">ДАННЫЕ ПРОФИЛЯ <span>/ 01</span></p><dl><div><dt>Адрес</dt><dd id="chairman-address">—</dd></div><div><dt>Телефон</dt><dd id="chairman-phone">—</dd></div><div><dt>Протокол</dt><dd id="chairman-protocol">—</dd></div><div><dt>Подтверждено</dt><dd id="chairman-verified">—</dd></div></dl></div>
+          <form id="new-request-form" class="new-request-form"><p class="section-kicker">НОВАЯ ЗАЯВКА <span>/ 02</span></p><h2>Передать задачу специалисту<span class="accent">.</span></h2><label>Тема заявки<input name="title" required maxlength="160" placeholder="Например, не работает лифт" /></label><label>Категория<select name="category" required><option value="">Выберите категорию</option><option>Инженерные сети</option><option>Лифт</option><option>Освещение</option><option>Благоустройство</option><option>Уборка</option><option>Другое</option></select></label><label>Описание<textarea name="description" rows="3" required maxlength="2000" placeholder="Что произошло и где именно"></textarea></label><label>Дата выезда, если известна<input name="scheduled_for" type="date" /></label><button type="submit">Создать заявку <span aria-hidden="true">↗</span></button><p id="form-feedback" class="form-feedback" role="status"></p></form></section>
+      </main>
+    </div>
+
+    <dialog id="request-dialog" class="request-dialog" aria-labelledby="dialog-title">
+      <form method="dialog"><button class="dialog-close" type="submit" aria-label="Закрыть">×</button></form>
+      <p class="dialog-kicker" id="dialog-id">—</p><h2 id="dialog-title">—</h2>
+      <p id="dialog-description" class="dialog-description"></p>
+      <dl class="dialog-details"><div><dt>Адрес</dt><dd id="dialog-address">—</dd></div><div><dt>Категория</dt><dd id="dialog-category">—</dd></div><div><dt>Создана</dt><dd id="dialog-created">—</dd></div></dl>
+      <div class="dialog-edit-fields">
+        <label class="dialog-field">СТАТУС<select id="dialog-status"><option value="new">Новая</option><option value="in_progress">В работе</option><option value="waiting">Ожидает</option><option value="done">Завершена</option></select></label>
+        <label class="dialog-field">ПРИОРИТЕТ<select id="dialog-priority"><option value="urgent">Срочно</option><option value="high">Высокий</option><option value="normal">Обычный</option><option value="low">Низкий</option></select></label>
+        <div class="dialog-date-row"><label class="dialog-field">ДАТА ВЫЕЗДА<input id="dialog-date" type="date" /></label><button id="dialog-clear-date" class="dialog-clear-date" type="button">Без даты</button></div>
+      </div>
+      <p id="dialog-feedback" class="dialog-feedback" role="status"></p>
+    </dialog>
   </body>
 </html>

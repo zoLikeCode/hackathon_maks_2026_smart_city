@@ -28,6 +28,7 @@ from src.phone_verification import (
     find_contact_payload,
     masked_phone,
 )
+from src.request_store import create_request_store
 from src.verification_store import (
     PhoneVerificationRepository,
     create_phone_verification_store,
@@ -106,7 +107,11 @@ def reply_target(update: dict[str, Any]) -> dict[str, int] | None:
     return {"chat_id": int(chat_id)} if chat_id is not None else None
 
 
-def profile_keyboard(bot_username: str | None) -> list[dict[str, Any]] | None:
+def profile_keyboard(
+    bot_username: str | None,
+    *,
+    label: str = "Открыть профиль",
+) -> list[dict[str, Any]] | None:
     if not bot_username:
         return None
     return [
@@ -117,7 +122,7 @@ def profile_keyboard(bot_username: str | None) -> list[dict[str, Any]] | None:
                     [
                         {
                             "type": "open_app",
-                            "text": "Открыть профиль",
+                            "text": label,
                             "web_app": bot_username.lstrip("@"),
                             "payload": "profile",
                         }
@@ -161,6 +166,14 @@ def send_authorized_profile(
         f"Телефон: {masked_phone(profile.phone)}",
         user_id=profile.user_id,
         attachments=profile_keyboard(bot_username),
+    )
+
+
+def send_specialist_workspace(api: MaxApi, user_id: int, bot_username: str | None) -> None:
+    api.send_message(
+        "Рабочее пространство специалиста доступно в мини-приложении. Откройте заявки и календарь.",
+        user_id=user_id,
+        attachments=profile_keyboard(bot_username, label="Открыть заявки"),
     )
 
 
@@ -427,6 +440,7 @@ def handle_update(
     auth_store: ChairmanAuthorizationRepository | None = None,
     gigachat: GigaChatApi | None = None,
     bot_username: str | None = None,
+    specialist_user_ids: frozenset[int] = frozenset(),
 ) -> None:
     update_type = update.get("update_type")
 
@@ -434,6 +448,9 @@ def handle_update(
         user_id = (update.get("user") or {}).get("user_id")
         if user_id is not None:
             user_id = int(user_id)
+            if user_id in specialist_user_ids:
+                send_specialist_workspace(api, user_id, bot_username)
+                return
             profile = auth_store.get_profile_by_user_id(user_id) if auth_store is not None else None
             if profile is not None:
                 send_authorized_profile(api, profile, bot_username)
@@ -472,6 +489,9 @@ def handle_update(
     sender_id = (message.get("sender") or {}).get("user_id")
     if command in {"/start", "/auth"}:
         if sender_id is not None:
+            if int(sender_id) in specialist_user_ids:
+                send_specialist_workspace(api, int(sender_id), bot_username)
+                return
             profile = (
                 auth_store.get_profile_by_user_id(int(sender_id))
                 if auth_store is not None
@@ -489,6 +509,9 @@ def handle_update(
             send_phone_request(api, **target)
             return
     elif command in {"/status", "/profile"}:
+        if sender_id is not None and int(sender_id) in specialist_user_ids:
+            send_specialist_workspace(api, int(sender_id), bot_username)
+            return
         profile = (
             auth_store.get_profile_by_user_id(int(sender_id))
             if auth_store is not None and sender_id is not None
@@ -524,6 +547,18 @@ def request_stop(_signum: int, _frame: object) -> None:
     running = False
 
 
+def parse_specialist_user_ids(value: str) -> frozenset[int]:
+    if not value.strip():
+        return frozenset()
+    try:
+        ids = frozenset(int(part.strip()) for part in value.split(","))
+    except ValueError as error:
+        raise ValueError("SPECIALIST_USER_IDS должен содержать MAX user ID через запятую") from error
+    if any(user_id <= 0 for user_id in ids):
+        raise ValueError("SPECIALIST_USER_IDS должен содержать положительные MAX user ID")
+    return ids
+
+
 def main() -> None:
     load_env()
     logging.basicConfig(
@@ -536,6 +571,8 @@ def main() -> None:
     api = MaxApi(token)
     phone_store = create_phone_verification_store(database_url, sqlite_path)
     auth_store = create_chairman_authorization_store(database_url, sqlite_path)
+    request_store = create_request_store(database_url, sqlite_path)
+    specialist_user_ids = parse_specialist_user_ids(os.getenv("SPECIALIST_USER_IDS", ""))
     gigachat = GigaChatApi.from_env()
     profile = api.get_me()
     bot_username = str(profile.get("username") or "") or None
@@ -548,6 +585,8 @@ def main() -> None:
     mini_app = MiniAppServer(
         auth_store,
         token,
+        request_repository=request_store,
+        specialist_user_ids=specialist_user_ids,
         port=int(os.getenv("MINI_APP_PORT", "8080")),
     )
     mini_app.start()
@@ -584,6 +623,7 @@ def main() -> None:
                             auth_store,
                             gigachat,
                             bot_username,
+                            specialist_user_ids,
                         )
                     except (MaxApiError, GigaChatApiError):
                         logger.exception("Не удалось обработать событие MAX")
