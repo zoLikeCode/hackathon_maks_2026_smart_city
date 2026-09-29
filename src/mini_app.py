@@ -17,6 +17,8 @@ from urllib.parse import parse_qsl, urlparse
 from src.auth_store import ChairmanAuthorizationRepository
 from src.phone_verification import masked_phone
 from src.request_store import PRIORITIES, STATUSES, RequestRepository, validate_scheduled_for
+from src.role_access import ROLE_START_PARAMS, ROLE_SWITCH_PHONE, has_role_switch_access
+from src.verification_store import PhoneVerificationRepository
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +67,7 @@ def validate_max_init_data(
     if not isinstance(user, dict):
         raise MiniAppAuthorizationError("Некорректный профиль пользователя MAX")
     user["id"] = user_id
+    user["_start_param"] = values.get("start_param")
     return user
 
 
@@ -76,6 +79,7 @@ class MiniAppServer:
         *,
         request_repository: RequestRepository | None = None,
         specialist_user_ids: set[int] | frozenset[int] | None = None,
+        phone_repository: PhoneVerificationRepository | None = None,
         host: str = "0.0.0.0",
         port: int = 8080,
         static_dir: Path | None = None,
@@ -84,6 +88,7 @@ class MiniAppServer:
         self._bot_token = bot_token
         self._request_repository = request_repository
         self._specialist_user_ids = frozenset(specialist_user_ids or ())
+        self._phone_repository = phone_repository
         self._host = host
         self._port = port
         self._static_dir = static_dir or Path(__file__).resolve().parent.parent / "webapp"
@@ -94,6 +99,7 @@ class MiniAppServer:
         repository = self._repository
         request_repository = self._request_repository
         specialist_user_ids = self._specialist_user_ids
+        phone_repository = self._phone_repository
         bot_token = self._bot_token
         static_dir = self._static_dir
 
@@ -136,6 +142,12 @@ class MiniAppServer:
                 if user is None:
                     return None
                 profile = repository.get_profile_by_user_id(int(user["id"]))
+                if has_role_switch_access(phone_repository, int(user["id"])):
+                    role = ROLE_START_PARAMS.get(user.get("_start_param"))
+                    if role in {"specialist", "chairman", "owner"}:
+                        return user, None if role == "owner" else profile, role
+                    self._json(HTTPStatus.FORBIDDEN, {"error": "Выберите роль кнопкой в чате с ботом"})
+                    return None
                 role = "specialist" if int(user["id"]) in specialist_user_ids else "chairman"
                 if role == "specialist" or profile is not None:
                     return user, profile, role
@@ -143,11 +155,11 @@ class MiniAppServer:
                 return None
 
             def _profile(self) -> None:
-                user = self._signed_user()
-                if user is None:
+                authorized = self._authorized()
+                if authorized is None:
                     return
-                profile = repository.get_profile_by_user_id(int(user["id"]))
-                if profile is None:
+                _user, profile, role = authorized
+                if role != "chairman" or profile is None:
                     self._json(
                         HTTPStatus.FORBIDDEN,
                         {"error": "Профиль председателя ещё не подтверждён в чате"},
@@ -183,6 +195,9 @@ class MiniAppServer:
                     "display_name": display_name,
                     "user_id": int(user["id"]),
                 }
+                if role in {"chairman", "owner"} and profile is None:
+                    data["demo_access"] = True
+                    data["phone"] = masked_phone(ROLE_SWITCH_PHONE)
                 if profile is not None:
                     data.update(
                         full_name=profile.full_name,
@@ -204,6 +219,9 @@ class MiniAppServer:
                 _user, profile, role = authorized
                 if request_repository is None:
                     self._json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": "Заявки недоступны"})
+                    return
+                if role == "owner" or (role == "chairman" and profile is None):
+                    self._json(HTTPStatus.FORBIDDEN, {"error": "Демо-кабинет не содержит реальных заявок"})
                     return
                 requests = (
                     request_repository.list_all()

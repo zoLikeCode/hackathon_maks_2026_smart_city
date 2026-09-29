@@ -13,9 +13,16 @@ from src.auth_store import SqliteChairmanAuthorizationStore
 from src.bot import handle_update, parse_specialist_user_ids
 from src.mini_app import MiniAppServer
 from src.request_store import SqliteRequestStore
+from src.verification_store import PhoneVerificationStore
 
 
-def signed_init_data(bot_token: str, user_id: int, *, claimed_role: str | None = None) -> str:
+def signed_init_data(
+    bot_token: str,
+    user_id: int,
+    *,
+    claimed_role: str | None = None,
+    start_param: str | None = None,
+) -> str:
     user = {"id": user_id, "first_name": f"User {user_id}"}
     if claimed_role:
         user["role"] = claimed_role
@@ -23,6 +30,8 @@ def signed_init_data(bot_token: str, user_id: int, *, claimed_role: str | None =
         "auth_date": str(int(time.time())),
         "user": json.dumps(user, separators=(",", ":")),
     }
+    if start_param is not None:
+        values["start_param"] = start_param
     launch_params = "\n".join(f"{key}={values[key]}" for key in sorted(values))
     secret_key = hmac.new(b"WebAppData", bot_token.encode(), hashlib.sha256).digest()
     values["hash"] = hmac.new(secret_key, launch_params.encode(), hashlib.sha256).hexdigest()
@@ -131,11 +140,15 @@ class RequestApiTests(unittest.TestCase):
             protocol_sha256="protocol-2",
             protocol_filename="protocol-2.pdf",
         )
+        self.authorization = authorization
+        self.phone_store = PhoneVerificationStore(database_path)
+        self.phone_store.save(500, "+79872660500")
         self.server = MiniAppServer(
             authorization,
             "test-token",
             request_repository=SqliteRequestStore(database_path),
             specialist_user_ids={100},
+            phone_repository=self.phone_store,
             host="127.0.0.1",
             port=0,
         )
@@ -152,11 +165,15 @@ class RequestApiTests(unittest.TestCase):
         method: str = "GET",
         body: dict | None = None,
         claimed_role: str | None = None,
+        start_param: str | None = None,
+        init_data: str | None = None,
     ) -> tuple[int, dict]:
         headers = Message()
-        if user_id is not None:
+        if user_id is not None or init_data is not None:
             headers["Authorization"] = (
-                "tma " + signed_init_data("test-token", user_id, claimed_role=claimed_role)
+                "tma " + (init_data or signed_init_data(
+                    "test-token", user_id, claimed_role=claimed_role, start_param=start_param
+                ))
             )
         data = b""
         if body is not None:
@@ -188,6 +205,86 @@ class RequestApiTests(unittest.TestCase):
         self.assertEqual(chairman["address"], "ул. Мира, 1")
         self.assertEqual(self.call("/api/session", user_id=999)[0], 403)
         self.assertEqual(self.call("/api/profile", user_id=42)[1]["role"], "Председатель ТСЖ")
+
+    def test_verified_phone_can_choose_signed_specialist_or_chairman_launch(self) -> None:
+        status, specialist = self.call(
+            "/api/session", user_id=500, start_param="role_specialist"
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(specialist["role"], "specialist")
+        self.assertEqual(self.call("/api/requests", user_id=500, start_param="role_specialist")[0], 200)
+
+        status, chairman = self.call(
+            "/api/session", user_id=500, start_param="role_chairman"
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(chairman["role"], "chairman")
+        self.assertTrue(chairman["demo_access"])
+        self.assertEqual(self.call("/api/requests", user_id=500, start_param="role_chairman")[0], 403)
+        self.assertEqual(
+            self.call(
+                "/api/requests",
+                user_id=500,
+                start_param="role_chairman",
+                method="POST",
+                body={"title": "Test", "category": "Test", "description": "Test"},
+            )[0],
+            403,
+        )
+        status, owner = self.call("/api/session", user_id=500, start_param="role_owner")
+        self.assertEqual(status, 200)
+        self.assertEqual(owner["role"], "owner")
+        self.assertTrue(owner["demo_access"])
+        self.assertEqual(self.call("/api/requests", user_id=500, start_param="role_owner")[0], 403)
+        self.assertEqual(self.call("/api/profile", user_id=500, start_param="role_owner")[0], 403)
+
+    def test_role_launch_cannot_be_spoofed_or_changed_without_signature(self) -> None:
+        self.assertEqual(self.call("/api/session", user_id=500)[0], 403)
+        self.assertEqual(self.call("/api/session?start_param=role_specialist", user_id=500)[0], 403)
+        self.assertEqual(
+            self.call("/api/session", user_id=500, claimed_role="specialist")[0], 403
+        )
+        self.assertEqual(self.call("/api/session", user_id=500, start_param="role_unknown")[0], 403)
+        self.assertEqual(self.call("/api/session", user_id=999, start_param="role_specialist")[0], 403)
+        status, ordinary_chairman = self.call(
+            "/api/session", user_id=42, start_param="role_specialist", claimed_role="specialist"
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(ordinary_chairman["role"], "chairman")
+
+        signed = signed_init_data("test-token", 500, start_param="role_chairman")
+        tampered = signed.replace("role_chairman", "role_specialist")
+        self.assertEqual(self.call("/api/session", init_data=tampered)[0], 401)
+
+        self.phone_store.save(500, "+79991234567")
+        self.assertEqual(
+            self.call("/api/session", user_id=500, start_param="role_specialist")[0], 403
+        )
+
+    def test_verified_chairman_profile_is_real_only_in_chairman_mode(self) -> None:
+        self.authorization.approve_chairman(
+            user_id=500,
+            phone="+79872660500",
+            full_name="Тестовый председатель",
+            space_id="hoa-test-500",
+            hoa_name="Тестовый дом",
+            address="Тестовая улица, 1",
+            protocol_sha256="protocol-500",
+            protocol_filename="protocol-500.pdf",
+        )
+        status, chairman = self.call("/api/session", user_id=500, start_param="role_chairman")
+        self.assertEqual(status, 200)
+        self.assertEqual(chairman["role"], "chairman")
+        self.assertNotIn("demo_access", chairman)
+        self.assertEqual(self.call("/api/profile", user_id=500, start_param="role_chairman")[0], 200)
+        self.assertEqual(self.call("/api/requests", user_id=500, start_param="role_chairman")[0], 200)
+
+        status, owner = self.call("/api/session", user_id=500, start_param="role_owner")
+        self.assertEqual(status, 200)
+        self.assertEqual(owner["role"], "owner")
+        self.assertTrue(owner["demo_access"])
+        self.assertNotIn("space_id", owner)
+        self.assertEqual(self.call("/api/profile", user_id=500, start_param="role_owner")[0], 403)
 
     def test_chairman_creates_own_request_and_specialist_prioritizes(self) -> None:
         payload = {

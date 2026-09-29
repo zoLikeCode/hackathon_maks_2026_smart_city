@@ -90,6 +90,87 @@ class BotTests(unittest.TestCase):
         self.assertEqual(verification.phone, "+79991234567")
         self.assertIn("подтверждён", api.sent[0][0])
 
+    def test_signed_special_contact_unlocks_role_buttons_for_same_max_user(self) -> None:
+        token = "test-token"
+        vcard = (
+            "BEGIN:VCARD\r\nVERSION:3.0\r\n"
+            "TEL;TYPE=cell:79872660500\r\nFN:Test User\r\nEND:VCARD\r\n"
+        )
+        signature = hmac.new(token.encode(), vcard.encode(), hashlib.sha256).hexdigest()
+        update = {
+            "update_type": "message_created",
+            "message": {
+                "sender": {"user_id": 42},
+                "recipient": {"chat_type": "dialog", "user_id": 42},
+                "body": {
+                    "attachments": [{
+                        "type": "contact",
+                        "payload": {"vcf_info": vcard, "hash": signature},
+                    }],
+                },
+            },
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            store = PhoneVerificationStore(Path(directory) / "test.sqlite3")
+            api = FakeApi(token)
+            handle_update(api, update, store, bot_username="smart_city_bot")
+            self.assertEqual(store.get(42).phone, "+79872660500")
+            buttons = api.sent[0][1]["attachments"][0]["payload"]["buttons"]
+            self.assertEqual(
+                [(row[0]["text"], row[0]["payload"]) for row in buttons],
+                [
+                    ("Специалист", "role_specialist"),
+                    ("Председатель", "role_chairman"),
+                    ("Собственник", "role_owner"),
+                ],
+            )
+            self.assertTrue(all(row[0]["type"] == "open_app" for row in buttons))
+
+            restarted = FakeApi(token)
+            handle_update(
+                restarted,
+                {"update_type": "bot_started", "user": {"user_id": 42}},
+                store,
+                bot_username="smart_city_bot",
+            )
+            self.assertEqual(restarted.sent[0][1]["attachments"], api.sent[0][1]["attachments"])
+
+            stranger = FakeApi(token)
+            handle_update(
+                stranger,
+                {"update_type": "bot_started", "user": {"user_id": 43}},
+                store,
+                bot_username="smart_city_bot",
+            )
+            stranger_buttons = stranger.sent[0][1]["attachments"][0]["payload"]["buttons"]
+            self.assertTrue(all(row[0]["type"] == "callback" for row in stranger_buttons))
+
+    def test_unsigned_special_contact_does_not_unlock_role_buttons(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = PhoneVerificationStore(Path(directory) / "test.sqlite3")
+            api = FakeApi()
+            handle_update(
+                api,
+                {
+                    "update_type": "message_created",
+                    "message": {
+                        "sender": {"user_id": 42},
+                        "recipient": {"chat_type": "dialog", "user_id": 42},
+                        "body": {"attachments": [{
+                            "type": "contact",
+                            "payload": {
+                                "vcf_info": "BEGIN:VCARD\r\nTEL:79872660500\r\nEND:VCARD\r\n",
+                                "hash": "invalid",
+                            },
+                        }]},
+                    },
+                },
+                store,
+                bot_username="smart_city_bot",
+            )
+            self.assertIsNone(store.get(42))
+            self.assertFalse(api.sent[0][1].get("attachments"))
+
     def test_unsigned_contact_is_rejected(self) -> None:
         api = FakeApi()
         handle_update(

@@ -29,6 +29,7 @@ from src.phone_verification import (
     masked_phone,
 )
 from src.request_store import create_request_store
+from src.role_access import ROLE_START_PARAMS, has_role_switch_access
 from src.verification_store import (
     PhoneVerificationRepository,
     create_phone_verification_store,
@@ -177,6 +178,41 @@ def send_specialist_workspace(api: MaxApi, user_id: int, bot_username: str | Non
     )
 
 
+def role_switch_keyboard(bot_username: str | None) -> list[dict[str, Any]] | None:
+    if not bot_username:
+        return None
+    labels = {"specialist": "Специалист", "chairman": "Председатель", "owner": "Собственник"}
+    buttons = []
+    for start_param, role in ROLE_START_PARAMS.items():
+        if role not in labels:
+            continue
+        buttons.append(
+            [
+                {
+                    "type": "open_app",
+                    "text": labels[role],
+                    "web_app": bot_username.lstrip("@"),
+                    "payload": start_param,
+                }
+            ]
+        )
+    return [
+        {
+            "type": "inline_keyboard",
+            "payload": {"buttons": buttons},
+        }
+    ]
+
+
+def send_role_switch_menu(api: MaxApi, user_id: int, bot_username: str | None) -> None:
+    api.send_message(
+        "Номер подтверждён. Выберите кабинет. Специалист работает с реальными заявками; "
+        "председатель без подтверждённого профиля и собственник откроются в деморежиме.",
+        user_id=user_id,
+        attachments=role_switch_keyboard(bot_username),
+    )
+
+
 def start_chairman_authorization(
     api: MaxApi,
     user_id: int,
@@ -260,6 +296,12 @@ def handle_contact(
     if phone_store is not None:
         phone_store.save(user_id, phone)
     logger.info("Подтверждён номер для user_id=%s", sender_id)
+
+    if has_role_switch_access(phone_store, user_id):
+        if auth_store is not None:
+            auth_store.clear_state(user_id)
+        send_role_switch_menu(api, user_id, bot_username)
+        return True
 
     state = auth_store.get_state(user_id) if auth_store is not None else None
     if auth_store is not None and state is not None and state.role == "chairman":
@@ -448,6 +490,9 @@ def handle_update(
         user_id = (update.get("user") or {}).get("user_id")
         if user_id is not None:
             user_id = int(user_id)
+            if has_role_switch_access(store, user_id):
+                send_role_switch_menu(api, user_id, bot_username)
+                return
             if user_id in specialist_user_ids:
                 send_specialist_workspace(api, user_id, bot_username)
                 return
@@ -489,6 +534,9 @@ def handle_update(
     sender_id = (message.get("sender") or {}).get("user_id")
     if command in {"/start", "/auth"}:
         if sender_id is not None:
+            if has_role_switch_access(store, int(sender_id)):
+                send_role_switch_menu(api, int(sender_id), bot_username)
+                return
             if int(sender_id) in specialist_user_ids:
                 send_specialist_workspace(api, int(sender_id), bot_username)
                 return
@@ -509,6 +557,9 @@ def handle_update(
             send_phone_request(api, **target)
             return
     elif command in {"/status", "/profile"}:
+        if sender_id is not None and has_role_switch_access(store, int(sender_id)):
+            send_role_switch_menu(api, int(sender_id), bot_username)
+            return
         if sender_id is not None and int(sender_id) in specialist_user_ids:
             send_specialist_workspace(api, int(sender_id), bot_username)
             return
@@ -586,6 +637,7 @@ def main() -> None:
         auth_store,
         token,
         request_repository=request_store,
+        phone_repository=phone_store,
         specialist_user_ids=specialist_user_ids,
         port=int(os.getenv("MINI_APP_PORT", "8080")),
     )

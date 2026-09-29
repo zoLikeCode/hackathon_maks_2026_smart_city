@@ -463,6 +463,29 @@ function renderChairman(profile, requests = []) {
   setChairmanView("requests");
 }
 
+function renderRoleDemo(role, displayName, phone) {
+  state.preview = true;
+  const isOwner = role === "owner";
+  const profile = {
+    full_name: displayName || "Демонстрационный пользователь",
+    hoa_name: isOwner ? "Дом на Садовой, 18" : "Демонстрационное ТСЖ",
+    address: "ул. Садовая, 18",
+    phone: phone || "Номер подтверждён в MAX",
+    protocol_filename: isOwner ? "Номер подтверждён в MAX" : "Не требуется для демо",
+    verified_at: new Date().toISOString(),
+  };
+  $(".chairman-header>span:last-child").textContent = isOwner ? "СОБСТВЕННИК / ДЕМО" : "ПРЕДСЕДАТЕЛЬ / ДЕМО";
+  $(".chairman-mobile-nav").setAttribute("aria-label", isOwner ? "Разделы собственника" : "Разделы председателя");
+  $("#chairman-requests-view .section-kicker").textContent = isOwner ? "ОБРАЩЕНИЯ ЖИТЕЛЯ / 01" : "ОБРАЩЕНИЯ ДОМА / 01";
+  $("#chairman-requests-view .chairman-subtitle").textContent = "Демонстрационный кабинет. Изменения не сохраняются на сервере.";
+  $("#chairman-create-view .chairman-subtitle").textContent = "Создайте пример заявки — он останется только на этом экране.";
+  $("#chairman-profile-view .section-kicker").textContent = isOwner ? "ПРОФИЛЬ СОБСТВЕННИКА / ДЕМО" : "ДЕМО-ПРОФИЛЬ / 03";
+  renderChairman(profile, demoRequests().filter((request) => request.address === profile.address));
+  $("#chairman-protocol").previousElementSibling.textContent = isOwner ? "Статус" : "Протокол";
+  $("#chairman-verified").previousElementSibling.textContent = "Доступ";
+  $("#chairman-verified").textContent = "Демонстрационный";
+}
+
 function renderSpecialistIdentity(session) {
   state.session = session;
   const name = session.display_name || "Специалист";
@@ -605,18 +628,9 @@ async function start() {
   state.selectedDate = localISO(new Date());
   const params = new URLSearchParams(window.location.search);
   const previewMode = ["localhost", "127.0.0.1"].includes(window.location.hostname) ? params.get("preview") : null;
-  state.preview = ["1", "chairman", "empty"].includes(previewMode);
-  if (previewMode === "chairman") {
-    $(".chairman-header>span:last-child").textContent = "ПРЕДСЕДАТЕЛЬ / ДЕМО";
-    const profile = {
-      full_name: "Анна Петрова",
-      hoa_name: "ТСЖ «Садовая, 18»",
-      address: "ул. Садовая, 18",
-      phone: "+7 ••• ••• 45 67",
-      protocol_filename: "Протокол собрания.pdf",
-      verified_at: new Date().toISOString(),
-    };
-    renderChairman(profile, demoRequests().filter((request) => request.address === profile.address));
+  state.preview = ["1", "chairman", "owner", "empty"].includes(previewMode);
+  if (previewMode === "chairman" || previewMode === "owner") {
+    renderRoleDemo(previewMode, previewMode === "owner" ? "Алексей Петров" : "Анна Петрова", "+7 ••• ••• 45 67");
     return;
   }
   if (state.preview) {
@@ -648,8 +662,14 @@ async function start() {
       render();
       setView("overview");
     } else if (session.role === "chairman") {
-      const [profile, requests] = await Promise.all([api("/api/profile"), api("/api/requests")]);
-      renderChairman(profile, Array.isArray(requests.requests) ? requests.requests : []);
+      if (session.demo_access) {
+        renderRoleDemo("chairman", session.display_name, session.phone);
+      } else {
+        const [profile, requests] = await Promise.all([api("/api/profile"), api("/api/requests")]);
+        renderChairman(profile, Array.isArray(requests.requests) ? requests.requests : []);
+      }
+    } else if (session.role === "owner" && session.demo_access) {
+      renderRoleDemo("owner", session.display_name, session.phone);
     } else {
       showError("Для этой роли пространство пока недоступно.");
     }
