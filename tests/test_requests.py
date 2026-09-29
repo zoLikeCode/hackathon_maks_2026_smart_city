@@ -143,6 +143,7 @@ class RequestApiTests(unittest.TestCase):
         self.authorization = authorization
         self.phone_store = PhoneVerificationStore(database_path)
         self.phone_store.save(500, "+79872660500")
+        self.phone_store.save(501, "+79969433497")
         self.server = MiniAppServer(
             authorization,
             "test-token",
@@ -347,6 +348,39 @@ class RequestApiTests(unittest.TestCase):
         self.phone_store.save(500, "+79991234567")
         self.assertEqual(
             self.call("/api/session", user_id=500, start_param="role_specialist")[0], 403
+        )
+
+    def test_second_verified_admin_can_open_each_role(self) -> None:
+        self.assertEqual(self.call("/api/session", user_id=501)[0], 403)
+        for start_param, role in (
+            ("role_specialist", "specialist"),
+            ("role_chairman", "chairman"),
+            ("role_owner", "owner"),
+        ):
+            with self.subTest(role=role):
+                status, session = self.call(
+                    "/api/session", user_id=501, start_param=start_param
+                )
+                self.assertEqual(status, 200)
+                self.assertEqual(session["role"], role)
+                if role == "specialist":
+                    self.assertNotIn("demo_access", session)
+                    self.assertEqual(
+                        self.call("/api/requests", user_id=501, start_param=start_param)[0], 200
+                    )
+                else:
+                    self.assertTrue(session["demo_access"])
+                    self.assertEqual(session["phone"], "+7•••••3497")
+                    self.assertEqual(
+                        self.call("/api/requests", user_id=501, start_param=start_param)[0], 403
+                    )
+
+        self.phone_store.save(501, "+79991234567")
+        self.assertEqual(
+            self.call("/api/session", user_id=501, start_param="role_specialist")[0], 403
+        )
+        self.assertEqual(
+            self.call("/api/session", user_id=500, start_param="role_specialist")[0], 200
         )
 
     def test_verified_chairman_profile_is_real_only_in_chairman_mode(self) -> None:

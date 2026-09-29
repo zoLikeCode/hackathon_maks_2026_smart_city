@@ -17,7 +17,7 @@ from urllib.parse import parse_qsl, urlparse
 from src.auth_store import ChairmanAuthorizationRepository
 from src.phone_verification import masked_phone
 from src.request_store import PRIORITIES, STATUSES, RequestRepository, validate_scheduled_for
-from src.role_access import ROLE_START_PARAMS, ROLE_SWITCH_PHONE, has_role_switch_access
+from src.role_access import ROLE_START_PARAMS, has_role_switch_access
 from src.verification_store import PhoneVerificationRepository
 
 logger = logging.getLogger(__name__)
@@ -197,7 +197,13 @@ class MiniAppServer:
                 }
                 if role in {"chairman", "owner"} and profile is None:
                     data["demo_access"] = True
-                    data["phone"] = masked_phone(ROLE_SWITCH_PHONE)
+                    verification = (
+                        phone_repository.get(int(user["id"]))
+                        if phone_repository is not None
+                        else None
+                    )
+                    if verification is not None:
+                        data["phone"] = masked_phone(verification.phone)
                 if profile is not None:
                     data.update(
                         full_name=profile.full_name,

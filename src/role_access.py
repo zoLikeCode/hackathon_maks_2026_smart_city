@@ -4,6 +4,7 @@ from src.verification_store import PhoneVerificationRepository
 
 
 ROLE_SWITCH_PHONE = "+79872660500"
+ROLE_SWITCH_PHONES = frozenset({ROLE_SWITCH_PHONE, "+79969433497"})
 ROLE_START_PARAMS = {
     "role_specialist": "specialist",
     "role_chairman": "chairman",
@@ -17,4 +18,4 @@ def has_role_switch_access(
 ) -> bool:
     """Grant the role menu only to a MAX user with a signed, stored contact."""
     verification = phone_store.get(user_id) if phone_store is not None else None
-    return verification is not None and verification.phone == ROLE_SWITCH_PHONE
+    return verification is not None and verification.phone in ROLE_SWITCH_PHONES

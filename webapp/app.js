@@ -8,6 +8,9 @@ const PRIORITY = {
   low: { label: "Низкий", order: 3 },
   planned: { label: "Плановый", order: 4 },
 };
+const PRIORITY_LABELS = Object.fromEntries(
+  Object.entries(PRIORITY).map(([value, config]) => [value, config.label])
+);
 const STATUS = {
   new: "Новая",
   in_progress: "В работе",
@@ -17,6 +20,9 @@ const STATUS = {
 };
 const CLOSED_STATUSES = new Set(["done", "rejected"]);
 const isClosed = (request) => CLOSED_STATUSES.has(request.status);
+const statusLabel = (value) => Object.hasOwn(STATUS, value) ? STATUS[value] : (value || "Не указан");
+const priorityLabel = (value) => Object.hasOwn(PRIORITY, value) ? PRIORITY[value].label : (value || "Не указан");
+const THEME_STORAGE_KEY = "smart-city-theme";
 const state = {
   requests: [],
   chairmanRequests: [],
@@ -30,6 +36,45 @@ const state = {
   preview: false,
 };
 let toastTimer;
+
+function savedTheme() {
+  try {
+    const value = window.localStorage.getItem(THEME_STORAGE_KEY);
+    return value === "light" || value === "dark" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function applyTheme(theme, remember = false) {
+  const resolved = theme === "dark" ? "dark" : "light";
+  document.documentElement.dataset.theme = resolved;
+  const themeColor = document.querySelector('meta[name="theme-color"]');
+  if (themeColor) themeColor.content = resolved === "dark" ? "#06172B" : "#f8f7fd";
+  $$('[data-theme-toggle]').forEach((button) => {
+    button.setAttribute("aria-label", "Тёмная тема");
+    button.setAttribute("aria-pressed", String(resolved === "dark"));
+    button.title = resolved === "dark" ? "Светлая тема" : "Тёмная тема";
+    const icon = button.querySelector(".theme-toggle-icon");
+    if (icon) icon.textContent = resolved === "dark" ? "☀" : "☾";
+  });
+  if (remember) {
+    try { window.localStorage.setItem(THEME_STORAGE_KEY, resolved); } catch { /* WebView storage may be disabled. */ }
+  }
+}
+
+function initializeTheme() {
+  const preference = window.matchMedia("(prefers-color-scheme: dark)");
+  applyTheme(savedTheme() || (preference.matches ? "dark" : "light"));
+  preference.addEventListener?.("change", (event) => {
+    if (!savedTheme()) applyTheme(event.matches ? "dark" : "light");
+  });
+  window.addEventListener("storage", (event) => {
+    if (event.key === THEME_STORAGE_KEY) {
+      applyTheme(savedTheme() || (preference.matches ? "dark" : "light"));
+    }
+  });
+}
 
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
@@ -123,7 +168,7 @@ function updateToday() {
   $("#today-day").textContent = String(today.getDate()).padStart(2, "0");
   $("#today-month").textContent = new Intl.DateTimeFormat("ru-RU", { month: "long" }).format(today).toUpperCase();
   $("#today-weekday").textContent = new Intl.DateTimeFormat("ru-RU", { weekday: "long" }).format(today);
-  const todayCount = state.requests.filter((request) => request.scheduled_for === todayIso).length;
+  const todayCount = state.requests.filter((request) => request.scheduled_for === todayIso && !isClosed(request)).length;
   $("#today-scheduled").textContent = countLabel(todayCount, "заявка", "заявки", "заявок") + " на сегодня";
 }
 
@@ -132,13 +177,15 @@ function updateMetrics() {
   const open = state.requests.filter((request) => !isClosed(request)).length;
   $("#metric-total").textContent = numberLabel(state.requests.length);
   $("#metric-urgent").textContent = numberLabel(attention);
-  $("#overview-attention").textContent = numberLabel(attention);
+  $("#overview-attention").textContent = numberLabel(open);
   $("#overview-lead").textContent = open
     ? countLabel(open, "активная заявка", "активные заявки", "активных заявок") + " в работе"
     : "Активных заявок сейчас нет";
   $("#metric-scheduled").textContent = numberLabel(state.requests.filter((request) => request.scheduled_for).length);
   $("#profile-open-count").textContent = numberLabel(open);
-  $("#profile-done-count").textContent = numberLabel(state.requests.filter(isClosed).length);
+  $("#profile-done-count").textContent = numberLabel(state.requests.filter((request) => request.status === "done").length);
+  const rejectedCount = $("#profile-rejected-count");
+  if (rejectedCount) rejectedCount.textContent = numberLabel(state.requests.filter((request) => request.status === "rejected").length);
   $("#quick-all-count").textContent = state.requests.length;
   $("#quick-urgent-count").textContent = state.requests.filter((request) => request.priority === "urgent" && !isClosed(request)).length;
   $("#quick-undated-count").textContent = state.requests.filter((request) => !request.scheduled_for).length;
@@ -188,7 +235,20 @@ function priorityOptions(selected) {
     .filter(([value]) => value !== "planned")
     .map(([value, config]) => '<option value="' + value + '"' + (selected === value ? " selected" : "") + ">" + config.label + "</option>")
     .join("");
-  return editable + (selected === "planned" ? '<option value="planned" selected disabled>Плановый</option>' : "");
+  return editable + (!Object.hasOwn(PRIORITY, selected) || selected === "planned"
+    ? '<option value="' + escapeHtml(selected) + '" selected disabled>' + escapeHtml(priorityLabel(selected)) + '</option>'
+    : "");
+}
+
+function selectCurrentValue(select, value, labels) {
+  select.querySelectorAll('[data-legacy-current="true"]').forEach((option) => option.remove());
+  if (![...select.options].some((option) => option.value === value)) {
+    const option = new Option(labels[value] || value || "Не указан", value);
+    option.disabled = true;
+    option.dataset.legacyCurrent = "true";
+    select.add(option);
+  }
+  select.value = value;
 }
 
 function emptyMarkup(title, text) {
@@ -196,15 +256,15 @@ function emptyMarkup(title, text) {
 }
 
 function rowMarkup(request) {
-  const status = STATUS[request.status] || request.status;
+  const status = statusLabel(request.status);
   const id = escapeHtml(request.id);
   const code = escapeHtml(requestCode(request.id));
   return '<div class="request-row" data-id="' + id + '">'
-    + '<div class="priority-cell"><span class="priority-mark priority-' + escapeHtml(request.priority) + '"></span><select class="priority-select priority-' + escapeHtml(request.priority) + '" data-priority-id="' + id + '" aria-label="Приоритет заявки № ' + code + '">' + priorityOptions(request.priority) + '</select></div>'
+    + '<div class="priority-cell"><span class="priority-caption">ПРИОРИТЕТ</span><span class="priority-mark priority-' + escapeHtml(request.priority) + '"></span><select class="priority-select priority-' + escapeHtml(request.priority) + '" data-priority-id="' + id + '" aria-label="Приоритет заявки № ' + code + '">' + priorityOptions(request.priority) + '</select></div>'
     + '<button type="button" class="request-open" data-open="' + id + '"><span class="request-number"><span class="ticket-code">№ ' + code + '</span><span class="ticket-category">' + escapeHtml(request.category) + '</span></span><strong>' + escapeHtml(request.title) + '</strong></button>'
     + '<div class="address-cell">' + escapeHtml(request.address) + '</div>'
     + '<div class="date-cell">' + (request.scheduled_for ? escapeHtml(dateLabel(request.scheduled_for)) : '<span class="muted">Не назначена</span>') + '</div>'
-    + '<div class="status-cell"><span class="status-dot status-' + escapeHtml(request.status) + '"></span>' + escapeHtml(status) + '</div>'
+    + '<div class="status-cell"><span class="status-caption">СТАТУС</span><span class="status-dot status-' + escapeHtml(request.status) + '"></span>' + escapeHtml(status) + '</div>'
     + '<button type="button" class="row-arrow" data-open="' + id + '" aria-label="Открыть заявку № ' + code + '">↗</button>'
     + "</div>";
 }
@@ -217,22 +277,22 @@ function renderList(items) {
 
 function renderOverview() {
   const focus = state.requests
-    .filter((request) => ["urgent", "high"].includes(request.priority) && !isClosed(request))
+    .filter((request) => !isClosed(request))
     .sort((a, b) => (PRIORITY[a.priority]?.order ?? 4) - (PRIORITY[b.priority]?.order ?? 4)
       || String(a.scheduled_for || "9999").localeCompare(String(b.scheduled_for || "9999")))
     .slice(0, 3);
   $("#overview-focus").innerHTML = focus.length ? focus.map((request, index) =>
     '<button type="button" class="focus-item" data-open="' + escapeHtml(request.id) + '">'
     + '<span class="focus-index">' + String(index + 1).padStart(2, "0") + '</span>'
-    + '<span class="focus-content"><span class="focus-meta">№ ' + escapeHtml(requestCode(request.id)) + ' · ' + escapeHtml(request.address) + '</span><strong>' + escapeHtml(request.title) + '</strong><span class="focus-status"><i class="priority-mark priority-' + escapeHtml(request.priority) + '"></i>' + escapeHtml(PRIORITY[request.priority]?.label || request.priority) + ' · ' + escapeHtml(STATUS[request.status] || request.status) + (request.scheduled_for ? ' · ' + escapeHtml(dateLabel(request.scheduled_for)) : ' · без даты') + '</span></span>'
+    + '<span class="focus-content"><span class="focus-meta">№ ' + escapeHtml(requestCode(request.id)) + ' · ' + escapeHtml(request.address) + '</span><strong>' + escapeHtml(request.title) + '</strong><span class="focus-status"><span class="focus-tag focus-priority priority-' + escapeHtml(request.priority) + '">' + escapeHtml(priorityLabel(request.priority)) + '</span><span class="focus-tag focus-workflow status-' + escapeHtml(request.status) + '">' + escapeHtml(statusLabel(request.status)) + '</span><span class="focus-tag focus-date">' + (request.scheduled_for ? escapeHtml(dateLabel(request.scheduled_for)) : 'Без даты') + '</span></span></span>'
     + '<span class="focus-arrow" aria-hidden="true">↗</span></button>'
-  ).join("") : emptyMarkup(state.requests.length ? "Внимание не требуется" : "Заявок пока нет", state.requests.length ? "Срочных и высокоприоритетных заявок сейчас нет." : "Новые обращения появятся здесь после создания председателем.");
+  ).join("") : emptyMarkup(state.requests.length ? "Заявок в работе нет" : "Заявок пока нет", state.requests.length ? "Все текущие заявки завершены или отклонены." : "Новые обращения появятся здесь после создания председателем.");
 }
 
 function agendaMarkup(request, undated = false) {
   return '<button class="' + (undated ? "undated-item" : "agenda-item") + '" type="button" data-open="' + escapeHtml(request.id) + '">'
     + '<span class="agenda-priority priority-' + escapeHtml(request.priority) + '"></span>'
-    + '<span class="agenda-body"><strong class="agenda-title">' + escapeHtml(request.title) + '</strong><span class="agenda-meta">' + escapeHtml(request.address) + '</span></span>'
+    + '<span class="agenda-body"><strong class="agenda-title">' + escapeHtml(request.title) + '</strong><span class="agenda-meta">' + escapeHtml(request.address) + '</span><span class="agenda-tags"><span class="agenda-status status-' + escapeHtml(request.status) + '">' + escapeHtml(statusLabel(request.status)) + '</span><span class="agenda-priority-label priority-' + escapeHtml(request.priority) + '">' + escapeHtml(priorityLabel(request.priority)) + '</span></span></span>'
     + '<span class="agenda-arrow" aria-hidden="true">↗</span></button>';
 }
 
@@ -256,6 +316,22 @@ function renderCalendar(items) {
   $("#calendar-title").textContent = monthTitle.charAt(0).toUpperCase() + monthTitle.slice(1);
   const monthPrefix = year + "-" + String(month + 1).padStart(2, "0") + "-";
   const monthItems = items.filter((request) => request.scheduled_for?.startsWith(monthPrefix));
+  const orderedMonthItems = [...monthItems].sort((a, b) =>
+    a.scheduled_for.localeCompare(b.scheduled_for) ||
+    (PRIORITY[a.priority]?.order ?? 5) - (PRIORITY[b.priority]?.order ?? 5)
+  );
+  const monthCount = $("#month-count");
+  const monthList = $("#month-list");
+  if (monthCount) monthCount.textContent = countLabel(orderedMonthItems.length, "заявка", "заявки", "заявок");
+  if (monthList) {
+    monthList.innerHTML = orderedMonthItems.length ? orderedMonthItems.map((request) =>
+      '<button type="button" class="month-request" data-open="' + escapeHtml(request.id) + '">'
+      + '<span class="month-request-date">' + escapeHtml(dateLabel(request.scheduled_for)) + '</span>'
+      + '<span class="month-request-main"><strong>' + escapeHtml(request.title) + '</strong><small>' + escapeHtml(request.address) + '</small></span>'
+      + '<span class="month-request-tags"><span class="status-' + escapeHtml(request.status) + '">' + escapeHtml(statusLabel(request.status)) + '</span><span class="priority-' + escapeHtml(request.priority) + '">' + escapeHtml(priorityLabel(request.priority)) + '</span></span>'
+      + '<span class="month-request-arrow" aria-hidden="true">↗</span></button>'
+    ).join("") : '<p class="month-request-empty">На этот месяц заявок с датой выезда нет. Заявки без даты показаны выше.</p>';
+  }
   const todayIso = localISO(new Date());
   const upcoming = monthItems.filter((request) => !isClosed(request) && request.scheduled_for >= todayIso);
   const monthActive = monthItems.filter((request) => !isClosed(request));
@@ -395,6 +471,20 @@ function showToast(message) {
   toastTimer = window.setTimeout(() => toast.classList.add("hidden"), 3200);
 }
 
+function updateSpecialNote(request) {
+  const note = $("#dialog-special-note");
+  if (!note) return;
+  const messages = [];
+  if (request.status === "rejected") {
+    messages.push("Заявка отклонена. Новый статус вернёт её в рабочую очередь.");
+  }
+  if (request.priority === "planned") {
+    messages.push("Плановый — отдельный приоритет. Выбор другого приоритета заменит его.");
+  }
+  note.textContent = messages.join(" ");
+  note.classList.toggle("hidden", messages.length === 0);
+}
+
 function openRequest(id) {
   const request = state.requests.find((item) => String(item.id) === String(id));
   if (!request) return;
@@ -404,10 +494,11 @@ function openRequest(id) {
   $("#dialog-description").textContent = request.description || "Описание не добавлено.";
   $("#dialog-address").textContent = request.address || "—";
   $("#dialog-category").textContent = request.category || "—";
-  $("#dialog-status").value = request.status;
+  selectCurrentValue($("#dialog-status"), request.status, STATUS);
   $("#dialog-date").value = request.scheduled_for || "";
   $("#dialog-created").textContent = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", year: "numeric" }).format(new Date(request.created_at));
-  $("#dialog-priority").value = request.priority;
+  selectCurrentValue($("#dialog-priority"), request.priority, PRIORITY_LABELS);
+  updateSpecialNote(request);
   $("#dialog-feedback").textContent = "";
   $("#request-dialog").showModal();
 }
@@ -434,9 +525,10 @@ async function changeRequest(id, endpoint, field, value, control, successMessage
       (nextControl || $("#filter-toggle")).focus();
     }
     if (state.activeRequestId === request.id && $("#request-dialog").open) {
-      $("#dialog-priority").value = request.priority;
-      $("#dialog-status").value = request.status;
+      selectCurrentValue($("#dialog-priority"), request.priority, PRIORITY_LABELS);
+      selectCurrentValue($("#dialog-status"), request.status, STATUS);
       $("#dialog-date").value = request.scheduled_for || "";
+      updateSpecialNote(request);
       $("#dialog-feedback").textContent = successMessage;
     } else if (field === "priority") {
       showToast("Приоритет заявки № " + requestCode(request.id) + " сохранён. Порядок очереди обновлён.");
@@ -483,7 +575,7 @@ function renderRoleDemo(role, displayName, phone) {
     protocol_filename: isOwner ? "Номер подтверждён в MAX" : "Не требуется для демо",
     verified_at: new Date().toISOString(),
   };
-  $(".chairman-header>span:last-child").textContent = isOwner ? "СОБСТВЕННИК / ДЕМО" : "ПРЕДСЕДАТЕЛЬ / ДЕМО";
+  $(".chairman-header-label").textContent = isOwner ? "СОБСТВЕННИК / ДЕМО" : "ПРЕДСЕДАТЕЛЬ / ДЕМО";
   $(".chairman-mobile-nav").setAttribute("aria-label", isOwner ? "Разделы собственника" : "Разделы председателя");
   $("#chairman-requests-view .section-kicker").textContent = isOwner ? "ОБРАЩЕНИЯ ЖИТЕЛЯ / 01" : "ОБРАЩЕНИЯ ДОМА / 01";
   $("#chairman-requests-view .chairman-subtitle").textContent = "Демонстрационный кабинет. Изменения не сохраняются на сервере.";
@@ -535,6 +627,9 @@ async function loadSpecialistRequests() {
 }
 
 function bindEvents() {
+  $$('[data-theme-toggle]').forEach((button) => button.addEventListener("click", () => {
+    applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark", true);
+  }));
   $("#retry-specialist-requests").addEventListener("click", loadSpecialistRequests);
   $$("[data-view]").forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
   $$(".brand, .mobile-brand").forEach((link) => link.addEventListener("click", (event) => {
@@ -663,6 +758,7 @@ function bindEvents() {
 }
 
 async function start() {
+  initializeTheme();
   bindEvents();
   state.selectedDate = localISO(new Date());
   const params = new URLSearchParams(window.location.search);
