@@ -355,9 +355,11 @@ textarea:focus-visible, summary:focus-visible {
 .priority-high.priority-mark, .priority-high.agenda-priority { background: #e89a38; }
 .priority-normal.priority-mark, .priority-normal.agenda-priority { background: var(--blue); }
 .priority-low.priority-mark, .priority-low.agenda-priority { background: #91a6b4; }
+.priority-planned.priority-mark, .priority-planned.agenda-priority { background: #78889e; }
 .priority-select { width: 100%; min-width: 0; min-height: 44px; padding: 0 2px; border: 0; background: transparent; color: #354d6c; font-size: 12px; font-weight: 800; cursor: pointer; }
 .priority-select.priority-urgent { color: var(--red); }
 .priority-select.priority-high { color: #a36317; }
+.priority-select.priority-planned { color: #66758a; }
 .request-open { display: block; width: 100%; min-width: 0; padding: 0; border: 0; background: none; color: var(--ink); text-align: left; }
 .request-open:hover { color: var(--blue); }
 .request-number { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; font-size: 10px; font-weight: 700; line-height: 1.2; }
@@ -372,6 +374,7 @@ textarea:focus-visible, summary:focus-visible {
 .status-dot.status-new { background: var(--blue); }
 .status-dot.status-in_progress { background: #e89a38; }
 .status-dot.status-done { background: var(--mint); }
+.status-dot.status-rejected { background: #a97d8a; }
 .row-arrow { display: grid; place-items: center; width: 44px; height: 44px; justify-self: end; border: 0; background: transparent; color: var(--blue); font-size: 22px; }
 .empty-state { display: flex; flex-direction: column; justify-content: center; min-height: 180px; padding: 24px; }
 .empty-symbol { color: var(--blue); font-size: 30px; }

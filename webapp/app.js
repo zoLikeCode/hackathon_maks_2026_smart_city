@@ -6,13 +6,17 @@ const PRIORITY = {
   high: { label: "Высокий", order: 1 },
   normal: { label: "Обычный", order: 2 },
   low: { label: "Низкий", order: 3 },
+  planned: { label: "Плановый", order: 4 },
 };
 const STATUS = {
   new: "Новая",
   in_progress: "В работе",
   waiting: "Ожидает",
   done: "Завершена",
+  rejected: "Отклонена",
 };
+const CLOSED_STATUSES = new Set(["done", "rejected"]);
+const isClosed = (request) => CLOSED_STATUSES.has(request.status);
 const state = {
   requests: [],
   chairmanRequests: [],
@@ -124,8 +128,8 @@ function updateToday() {
 }
 
 function updateMetrics() {
-  const attention = state.requests.filter((request) => ["urgent", "high"].includes(request.priority) && request.status !== "done").length;
-  const open = state.requests.filter((request) => request.status !== "done").length;
+  const attention = state.requests.filter((request) => ["urgent", "high"].includes(request.priority) && !isClosed(request)).length;
+  const open = state.requests.filter((request) => !isClosed(request)).length;
   $("#metric-total").textContent = numberLabel(state.requests.length);
   $("#metric-urgent").textContent = numberLabel(attention);
   $("#overview-attention").textContent = numberLabel(attention);
@@ -134,9 +138,9 @@ function updateMetrics() {
     : "Активных заявок сейчас нет";
   $("#metric-scheduled").textContent = numberLabel(state.requests.filter((request) => request.scheduled_for).length);
   $("#profile-open-count").textContent = numberLabel(open);
-  $("#profile-done-count").textContent = numberLabel(state.requests.filter((request) => request.status === "done").length);
+  $("#profile-done-count").textContent = numberLabel(state.requests.filter(isClosed).length);
   $("#quick-all-count").textContent = state.requests.length;
-  $("#quick-urgent-count").textContent = state.requests.filter((request) => request.priority === "urgent" && request.status !== "done").length;
+  $("#quick-urgent-count").textContent = state.requests.filter((request) => request.priority === "urgent" && !isClosed(request)).length;
   $("#quick-undated-count").textContent = state.requests.filter((request) => !request.scheduled_for).length;
   updateToday();
 }
@@ -164,12 +168,12 @@ function filteredRequests() {
   return state.requests.filter((request) => {
     const haystack = [request.id, request.title, request.address, request.category, request.description, request.assignee].join(" ").toLocaleLowerCase("ru-RU");
     return (!current.search || haystack.includes(current.search))
-      && (!current.status || (current.status === "open" ? request.status !== "done" : request.status === current.status))
+      && (!current.status || (current.status === "open" ? !isClosed(request) : request.status === current.status))
       && (!current.priority || request.priority === current.priority)
       && (!current.category || request.category === current.category)
       && (!current.date || (current.date === "scheduled" ? Boolean(request.scheduled_for) : !request.scheduled_for));
   }).sort((a, b) => {
-    if ((a.status === "done") !== (b.status === "done")) return a.status === "done" ? 1 : -1;
+    if (isClosed(a) !== isClosed(b)) return isClosed(a) ? 1 : -1;
     const rank = (PRIORITY[a.priority]?.order ?? 4) - (PRIORITY[b.priority]?.order ?? 4);
     if (rank) return rank;
     if (!a.scheduled_for && !b.scheduled_for) return b.created_at.localeCompare(a.created_at);
@@ -180,7 +184,11 @@ function filteredRequests() {
 }
 
 function priorityOptions(selected) {
-  return Object.entries(PRIORITY).map(([value, config]) => '<option value="' + value + '"' + (selected === value ? " selected" : "") + ">" + config.label + "</option>").join("");
+  const editable = Object.entries(PRIORITY)
+    .filter(([value]) => value !== "planned")
+    .map(([value, config]) => '<option value="' + value + '"' + (selected === value ? " selected" : "") + ">" + config.label + "</option>")
+    .join("");
+  return editable + (selected === "planned" ? '<option value="planned" selected disabled>Плановый</option>' : "");
 }
 
 function emptyMarkup(title, text) {
@@ -209,7 +217,7 @@ function renderList(items) {
 
 function renderOverview() {
   const focus = state.requests
-    .filter((request) => ["urgent", "high"].includes(request.priority) && request.status !== "done")
+    .filter((request) => ["urgent", "high"].includes(request.priority) && !isClosed(request))
     .sort((a, b) => (PRIORITY[a.priority]?.order ?? 4) - (PRIORITY[b.priority]?.order ?? 4)
       || String(a.scheduled_for || "9999").localeCompare(String(b.scheduled_for || "9999")))
     .slice(0, 3);
@@ -249,13 +257,13 @@ function renderCalendar(items) {
   const monthPrefix = year + "-" + String(month + 1).padStart(2, "0") + "-";
   const monthItems = items.filter((request) => request.scheduled_for?.startsWith(monthPrefix));
   const todayIso = localISO(new Date());
-  const upcoming = monthItems.filter((request) => request.status !== "done" && request.scheduled_for >= todayIso);
-  const monthActive = monthItems.filter((request) => request.status !== "done");
+  const upcoming = monthItems.filter((request) => !isClosed(request) && request.scheduled_for >= todayIso);
+  const monthActive = monthItems.filter((request) => !isClosed(request));
   const previewItems = (upcoming.length ? upcoming : monthActive.length ? monthActive : monthItems).sort((a, b) =>
     a.scheduled_for.localeCompare(b.scheduled_for) || (PRIORITY[a.priority]?.order ?? 4) - (PRIORITY[b.priority]?.order ?? 4)
   ).slice(0, 3);
   $("#calendar-mobile-agenda").innerHTML = '<div class="mobile-agenda-head"><span>ПО ДАТАМ</span><span>' + countLabel(monthItems.length, "заявка", "заявки", "заявок") + ' в месяце</span></div>'
-    + (previewItems.length ? previewItems.map((request) => '<button type="button" class="mobile-agenda-item" data-open="' + escapeHtml(request.id) + '"><span class="mobile-agenda-date"><strong>' + escapeHtml(parseDay(request.scheduled_for).getDate()) + '</strong><small>' + escapeHtml(dateLabel(request.scheduled_for, { month: "short" })) + '</small></span><span class="mobile-agenda-body"><strong>' + escapeHtml(request.title) + '</strong><small>' + escapeHtml(request.address) + ' · ' + escapeHtml(PRIORITY[request.priority]?.label || request.priority) + (request.status === "done" ? ' · Завершена' : '') + '</small></span><span class="mobile-agenda-arrow" aria-hidden="true">↗</span></button>').join("") : '<p class="mobile-agenda-empty">Запланированных выездов пока нет.</p>');
+    + (previewItems.length ? previewItems.map((request) => '<button type="button" class="mobile-agenda-item" data-open="' + escapeHtml(request.id) + '"><span class="mobile-agenda-date"><strong>' + escapeHtml(parseDay(request.scheduled_for).getDate()) + '</strong><small>' + escapeHtml(dateLabel(request.scheduled_for, { month: "short" })) + '</small></span><span class="mobile-agenda-body"><strong>' + escapeHtml(request.title) + '</strong><small>' + escapeHtml(request.address) + ' · ' + escapeHtml(PRIORITY[request.priority]?.label || request.priority) + (isClosed(request) ? ' · ' + escapeHtml(STATUS[request.status]) : '') + '</small></span><span class="mobile-agenda-arrow" aria-hidden="true">↗</span></button>').join("") : '<p class="mobile-agenda-empty">Запланированных выездов пока нет.</p>');
   const firstWeekday = (new Date(year, month, 1).getDay() + 6) % 7;
   const lastDay = new Date(year, month + 1, 0).getDate();
   const cells = Math.ceil((firstWeekday + lastDay) / 7) * 7;

@@ -12,7 +12,7 @@ from urllib.parse import urlencode
 from src.auth_store import SqliteChairmanAuthorizationStore
 from src.bot import handle_update, parse_specialist_user_ids
 from src.mini_app import MiniAppServer
-from src.request_store import SqliteRequestStore
+from src.request_store import ServiceRequest, SqliteRequestStore
 from src.verification_store import PhoneVerificationStore
 
 
@@ -252,6 +252,79 @@ class RequestApiTests(unittest.TestCase):
         self.assertEqual(status, 503)
         self.assertEqual(payload, {"error": "Не удалось загрузить заявки. Попробуйте ещё раз."})
         self.assertIn("database unavailable", "\n".join(logs.output))
+
+    def test_legacy_32_character_request_id_reaches_specialist_patch_actions(self) -> None:
+        request_id = "a" * 32
+
+        class RecordingRequestStore:
+            def __init__(self) -> None:
+                self.calls: list[tuple[str, str, str | None]] = []
+
+            def _updated(self, action: str, item_id: str, value: str | None) -> ServiceRequest:
+                self.calls.append((action, item_id, value))
+                return ServiceRequest(
+                    id=item_id,
+                    title="Лифт",
+                    category="Без категории",
+                    description="Не работает",
+                    address="ул. Мира, 1",
+                    created_at="2026-09-29T10:00:00+00:00",
+                    scheduled_for=value if action == "schedule" else None,
+                    status=value if action == "status" else "new",
+                    priority=value if action == "priority" else "normal",
+                    assignee=None,
+                )
+
+            def set_priority(self, item_id: str, value: str) -> ServiceRequest:
+                return self._updated("priority", item_id, value)
+
+            def set_status(self, item_id: str, value: str) -> ServiceRequest:
+                return self._updated("status", item_id, value)
+
+            def set_schedule(self, item_id: str, value: str | None) -> ServiceRequest:
+                return self._updated("schedule", item_id, value)
+
+        repository = RecordingRequestStore()
+        self.server._request_repository = repository
+        self.handler_type = self.server._handler()
+        actions = (
+            ("priority", {"priority": "urgent"}, "urgent"),
+            ("status", {"status": "done"}, "done"),
+            ("schedule", {"scheduled_for": "2026-10-05"}, "2026-10-05"),
+        )
+        for action, body, value in actions:
+            status, payload = self.call(
+                f"/api/requests/{request_id}/{action}",
+                user_id=100,
+                method="PATCH",
+                body=body,
+            )
+            self.assertEqual(status, 200)
+            self.assertEqual(payload["request"]["id"], request_id)
+            self.assertEqual(repository.calls[-1], (action, request_id, value))
+
+        other_id = "A_2-" * 8
+        status, _payload = self.call(
+            f"/api/requests/{other_id}/priority",
+            user_id=100,
+            method="PATCH",
+            body={"priority": "high"},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(repository.calls[-1], ("priority", other_id, "high"))
+
+        calls_before_invalid = len(repository.calls)
+        for invalid_id in ("a" * 31, "!" * 32):
+            self.assertEqual(
+                self.call(
+                    f"/api/requests/{invalid_id}/priority",
+                    user_id=100,
+                    method="PATCH",
+                    body={"priority": "high"},
+                )[0],
+                404,
+            )
+        self.assertEqual(len(repository.calls), calls_before_invalid)
 
     def test_role_launch_cannot_be_spoofed_or_changed_without_signature(self) -> None:
         self.assertEqual(self.call("/api/session", user_id=500)[0], 403)

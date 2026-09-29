@@ -295,15 +295,23 @@ class MiniAppServer:
                 except ValueError as error:
                     self._json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
                     return
-                item = request_repository.create(
-                    space_id=profile.space_id,
-                    created_by_user_id=int(user["id"]),
-                    title=payload["title"],
-                    category=payload["category"],
-                    description=payload["description"],
-                    address=profile.address,
-                    scheduled_for=scheduled_for,
-                )
+                try:
+                    item = request_repository.create(
+                        space_id=profile.space_id,
+                        created_by_user_id=int(user["id"]),
+                        title=payload["title"],
+                        category=payload["category"],
+                        description=payload["description"],
+                        address=profile.address,
+                        scheduled_for=scheduled_for,
+                    )
+                except Exception:
+                    logger.exception("Failed to create service request")
+                    self._json(
+                        HTTPStatus.SERVICE_UNAVAILABLE,
+                        {"error": "Не удалось создать заявку. Попробуйте ещё раз."},
+                    )
+                    return
                 self._json(HTTPStatus.CREATED, {"request": item.as_dict()})
 
             def _update_request(self, request_id: str, action: str) -> None:
@@ -325,23 +333,32 @@ class MiniAppServer:
                     self._json(HTTPStatus.BAD_REQUEST, {"error": f"Ожидается поле {field}"})
                     return
                 value = payload[field]
-                if action == "priority":
-                    if not isinstance(value, str) or value not in PRIORITIES:
-                        self._json(HTTPStatus.BAD_REQUEST, {"error": "Некорректный приоритет"})
-                        return
-                    item = request_repository.set_priority(request_id, value)
-                elif action == "status":
-                    if not isinstance(value, str) or value not in STATUSES:
-                        self._json(HTTPStatus.BAD_REQUEST, {"error": "Некорректный статус"})
-                        return
-                    item = request_repository.set_status(request_id, value)
-                else:
+                if action == "priority" and (not isinstance(value, str) or value not in PRIORITIES):
+                    self._json(HTTPStatus.BAD_REQUEST, {"error": "Некорректный приоритет"})
+                    return
+                if action == "status" and (not isinstance(value, str) or value not in STATUSES):
+                    self._json(HTTPStatus.BAD_REQUEST, {"error": "Некорректный статус"})
+                    return
+                if action == "schedule":
                     try:
-                        scheduled_for = validate_scheduled_for(value)
+                        value = validate_scheduled_for(value)
                     except ValueError as error:
                         self._json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
                         return
-                    item = request_repository.set_schedule(request_id, scheduled_for)
+                try:
+                    if action == "priority":
+                        item = request_repository.set_priority(request_id, value)
+                    elif action == "status":
+                        item = request_repository.set_status(request_id, value)
+                    else:
+                        item = request_repository.set_schedule(request_id, value)
+                except Exception:
+                    logger.exception("Failed to update service request %s", action)
+                    self._json(
+                        HTTPStatus.SERVICE_UNAVAILABLE,
+                        {"error": "Не удалось сохранить заявку. Попробуйте ещё раз."},
+                    )
+                    return
                 if item is None:
                     self._json(HTTPStatus.NOT_FOUND, {"error": "Заявка не найдена"})
                     return
@@ -390,7 +407,8 @@ class MiniAppServer:
 
             def do_PATCH(self) -> None:  # noqa: N802
                 match = re.fullmatch(
-                    r"/api/requests/([0-9a-fA-F-]{36})/(priority|status|schedule)",
+                    r"/api/requests/([A-Za-z0-9_-]{32}|[0-9a-fA-F-]{36})/"
+                    r"(priority|status|schedule)",
                     urlparse(self.path).path,
                 )
                 if match is not None:
