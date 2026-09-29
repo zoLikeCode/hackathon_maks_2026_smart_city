@@ -22,34 +22,30 @@ jobs:
 
       - name: Upload and restart
         env:
-          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_PATH: /opt/smart-city-max-bot
+          SSHPASS: ${{ secrets.DEPLOY_SSH_PASSWORD }}
         run: |
           set -euo pipefail
-          for name in DEPLOY_PATH DEPLOY_SSH_KEY DEPLOY_KNOWN_HOSTS; do
-            if [[ -z "${!name}" ]]; then
-              echo "Missing GitHub Actions secret: $name" >&2
-              exit 1
-            fi
-          done
+          [[ -n "$SSHPASS" ]] || { echo 'Missing GitHub Actions secret: DEPLOY_SSH_PASSWORD' >&2; exit 1; }
+
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq sshpass
 
           umask 077
-          printf '%s\n' "$DEPLOY_SSH_KEY" > "$RUNNER_TEMP/deploy_key"
-          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$RUNNER_TEMP/known_hosts"
           git archive --format=tar.gz --output="$RUNNER_TEMP/release.tar.gz" HEAD
 
           ssh_options=(
-            -i "$RUNNER_TEMP/deploy_key"
-            -o IdentitiesOnly=yes
             -o StrictHostKeyChecking=yes
-            -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts"
+            -o UserKnownHostsFile="$GITHUB_WORKSPACE/.github/deploy_known_hosts"
+            -o PreferredAuthentications=password,keyboard-interactive
+            -o PubkeyAuthentication=no
+            -o NumberOfPasswordPrompts=1
           )
           archive="/tmp/smart-city-${GITHUB_SHA}.tar.gz"
-          scp "${ssh_options[@]}" "$RUNNER_TEMP/release.tar.gz" "root@213.171.9.160:$archive"
+          sshpass -e scp "${ssh_options[@]}" "$RUNNER_TEMP/release.tar.gz" "root@213.171.9.160:$archive"
 
           path_b64="$(printf '%s' "$DEPLOY_PATH" | base64 -w 0)"
-          ssh "${ssh_options[@]}" root@213.171.9.160 \
+          sshpass -e ssh "${ssh_options[@]}" root@213.171.9.160 \
             "DEPLOY_PATH_B64=$path_b64 DEPLOY_SHA=$GITHUB_SHA bash -s" <<'REMOTE'
           set -euo pipefail
           app_dir="$(printf '%s' "$DEPLOY_PATH_B64" | base64 -d)"

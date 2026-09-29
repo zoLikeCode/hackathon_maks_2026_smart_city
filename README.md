@@ -149,15 +149,14 @@ Push в ветку `feat/specialist-workspace` запускает `.github/workf
 Workflow без тестового этапа передаёт архив коммита по SSH, пересобирает Docker Compose и
 проверяет `/health`. Серверный `.env` и том PostgreSQL остаются на месте.
 
-Перед первым запуском задайте в GitHub Actions три секрета репозитория:
+Перед первым запуском в GitHub → Settings → Secrets and variables → Actions → Repository secrets
+создайте `DEPLOY_SSH_PASSWORD` со значением пароля SSH пользователя `root` на сервере.
+Путь к серверному проекту уже задан в workflow: `/opt/smart-city-max-bot`. В нём должны лежать
+`.env`, `compose.yaml` и `compose.server.yaml`.
 
-- `DEPLOY_PATH` — абсолютный путь к каталогу проекта на сервере, где уже лежит `.env`;
-- `DEPLOY_SSH_KEY` — закрытый ключ отдельной пары SSH для деплоя;
-- `DEPLOY_KNOWN_HOSTS` — строка ключа сервера для `213.171.9.160` в формате `known_hosts`.
-
-Открытый ключ этой пары добавьте в `/root/.ssh/authorized_keys` на сервере. Закрытый ключ и
-значения `.env` в репозиторий не добавляйте. Workflow остановится до изменения файлов, если
-серверный `.env` или прежний Compose-проект отсутствуют.
+Публичный ключ SSH сервера закреплён в `.github/deploy_known_hosts`; workflow проверяет его при
+каждом подключении. Пароль и значения `.env` в репозиторий не добавляйте. Workflow остановится до
+изменения файлов, если серверный `.env` или прежний Compose-проект отсутствуют.
 
 Локальная проверка доступности:
 
