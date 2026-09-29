@@ -39,6 +39,20 @@ def extract_phone_from_vcard(vcf_info: str) -> str:
     return f"+{digits}"
 
 
+def normalize_phone_input(value: str) -> str:
+    """Приводит введённый председателем номер к формату контакта MAX."""
+    if not isinstance(value, str) or not re.fullmatch(r"[+\d\s()\-]+", value.strip()):
+        raise ContactVerificationError("Укажите корректный номер телефона")
+    digits = re.sub(r"\D", "", value)
+    if len(digits) == 11 and digits.startswith("8"):
+        digits = f"7{digits[1:]}"
+    elif len(digits) == 10 and digits.startswith("9"):
+        digits = f"7{digits}"
+    if not 10 <= len(digits) <= 15:
+        raise ContactVerificationError("Номер телефона имеет некорректный формат")
+    return f"+{digits}"
+
+
 def find_contact_payload(message_body: dict[str, Any]) -> dict[str, Any] | None:
     for attachment in message_body.get("attachments") or []:
         if attachment.get("type") == "contact":

@@ -43,6 +43,8 @@ class ChairmanAuthorizationRepository(Protocol):
 
     def get_profile_by_user_id(self, user_id: int) -> ChairmanProfile | None: ...
 
+    def get_profile_by_space_id(self, space_id: str) -> ChairmanProfile | None: ...
+
     def get_profile_by_phone(self, phone: str) -> ChairmanProfile | None: ...
 
     def get_profile_by_protocol(self, document_sha256: str) -> ChairmanProfile | None: ...
@@ -238,6 +240,9 @@ class SqliteChairmanAuthorizationStore:
 
     def get_profile_by_user_id(self, user_id: int) -> ChairmanProfile | None:
         return self._get_profile("p.user_id", user_id)
+
+    def get_profile_by_space_id(self, space_id: str) -> ChairmanProfile | None:
+        return self._get_profile("p.space_id", space_id)
 
     def get_profile_by_phone(self, phone: str) -> ChairmanProfile | None:
         return self._get_profile("p.phone", phone)
@@ -449,6 +454,9 @@ class PostgresChairmanAuthorizationStore:
 
     def get_profile_by_user_id(self, user_id: int) -> ChairmanProfile | None:
         return self._get_profile("p.user_id", user_id)
+
+    def get_profile_by_space_id(self, space_id: str) -> ChairmanProfile | None:
+        return self._get_profile("p.space_id", space_id)
 
     def get_profile_by_phone(self, phone: str) -> ChairmanProfile | None:
         return self._get_profile("p.phone", phone)

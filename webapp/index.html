@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="light" />
-    <title>Профиль председателя</title>
+    <title>Умный город — ТСЖ</title>
     <link rel="stylesheet" href="/styles.css" />
     <script src="https://st.max.ru/js/max-web-app.js"></script>
     <script src="/app.js" defer></script>
@@ -15,7 +15,7 @@
         <div class="brand-mark">УГ</div>
         <div>
           <p class="eyebrow">Умный город</p>
-          <h1>Профиль</h1>
+          <h1 id="page-title">Профиль</h1>
         </div>
       </header>
 
@@ -26,28 +26,155 @@
 
       <section id="error" class="card state-card hidden" role="alert">
         <div class="status-icon status-error">!</div>
-        <h2>Профиль недоступен</h2>
+        <h2>Не удалось открыть пространство</h2>
         <p id="error-message"></p>
       </section>
 
       <section id="profile" class="hidden">
-        <article class="hero-card">
-          <div class="status-line"><span class="status-dot"></span> Личность подтверждена</div>
-          <p id="role" class="role"></p>
-          <h2 id="full-name"></h2>
-          <p id="hoa-name" class="hoa-name"></p>
-        </article>
+        <section id="screen-profile" class="app-screen">
+          <article class="hero-card">
+            <div class="status-line"><span class="status-dot"></span> Вход подтверждён</div>
+            <p id="role" class="role"></p>
+            <h2 id="full-name"></h2>
+            <p id="hoa-name" class="hoa-name"></p>
+          </article>
 
-        <article class="card details">
-          <h3>Данные профиля</h3>
-          <dl>
-            <div><dt>Адрес</dt><dd id="address"></dd></div>
-            <div><dt>Телефон</dt><dd id="phone"></dd></div>
-            <div><dt>Протокол</dt><dd id="protocol"></dd></div>
-            <div><dt>Подтверждено</dt><dd id="verified-at"></dd></div>
-          </dl>
-        </article>
+          <article id="chairman-details" class="card details hidden">
+            <h3>Данные профиля</h3>
+            <dl>
+              <div><dt>Адрес</dt><dd id="address"></dd></div>
+              <div><dt>Телефон</dt><dd id="phone"></dd></div>
+              <div><dt>Протокол</dt><dd id="protocol"></dd></div>
+              <div><dt>Подтверждено</dt><dd id="verified-at"></dd></div>
+            </dl>
+          </article>
+
+          <article id="chairman-chat" class="card hidden">
+            <h3>Общий чат ТСЖ</h3>
+            <p class="muted">Сначала сохраните ссылку-приглашение из MAX, затем добавьте бота в этот чат и назначьте его администратором. MAX передаёт боту события группового чата при наличии этих прав. Из остальных обнаруженных чатов бот выйдет автоматически.</p>
+            <form id="group-chat-form">
+              <label for="group-chat-link">Ссылка на чат MAX</label>
+              <input id="group-chat-link" type="url" inputmode="url" autocomplete="off" maxlength="1024" placeholder="https://max.ru/join/..." />
+              <button type="submit">Сохранить ссылку</button>
+            </form>
+            <p id="group-chat-state" class="muted"></p>
+            <p id="group-chat-message" class="feedback" role="status"></p>
+          </article>
+
+          <article id="owner-details" class="card hidden">
+            <h3>Мои помещения</h3>
+            <div id="memberships" class="list"></div>
+            <p class="muted">Новую заявку можно создать в чате с ботом. Здесь отображаются заявки и их статусы.</p>
+          </article>
+
+          <article id="specialist-details" class="card details hidden">
+            <h3>Мои ТСЖ</h3>
+            <div id="specialist-memberships" class="list"></div>
+          </article>
+        </section>
+
+        <section id="screen-specialists" class="app-screen hidden">
+          <article class="card screen-card">
+            <h3>Специалисты ТСЖ</h3>
+            <form id="timezone-form" class="timezone-form">
+              <label for="hoa-timezone">Часовой пояс ТСЖ</label>
+              <select id="hoa-timezone">
+                <option value="Europe/Kaliningrad">Калининград (UTC+2)</option>
+                <option value="Europe/Moscow">Москва (UTC+3)</option>
+                <option value="Europe/Samara">Самара (UTC+4)</option>
+                <option value="Asia/Yekaterinburg">Екатеринбург (UTC+5)</option>
+                <option value="Asia/Omsk">Омск (UTC+6)</option>
+                <option value="Asia/Krasnoyarsk">Красноярск (UTC+7)</option>
+                <option value="Asia/Irkutsk">Иркутск (UTC+8)</option>
+                <option value="Asia/Yakutsk">Якутск (UTC+9)</option>
+                <option value="Asia/Vladivostok">Владивосток (UTC+10)</option>
+                <option value="Asia/Magadan">Магадан (UTC+11)</option>
+                <option value="Asia/Kamchatka">Камчатка (UTC+12)</option>
+              </select>
+              <button type="submit" class="secondary">Сохранить часовой пояс</button>
+              <p id="timezone-message" class="feedback" role="status"></p>
+            </form>
+            <form id="specialist-form">
+              <label for="specialist-type">Специальность</label>
+              <select id="specialist-type" required>
+                <option value="plumber">Сантехник</option>
+                <option value="electrician">Электрик</option>
+              </select>
+              <label for="specialist-name">ФИО</label>
+              <input id="specialist-name" type="text" maxlength="180" autocomplete="name" required placeholder="Фамилия Имя Отчество" />
+              <label for="specialist-phone">Номер телефона</label>
+              <input id="specialist-phone" type="tel" autocomplete="tel" required placeholder="+7 900 000-00-00" />
+              <button type="submit">Добавить специалиста</button>
+            </form>
+            <p class="muted">Специалист выбирает свою роль в чате с ботом и подтверждает этот номер через MAX.</p>
+            <p id="specialist-message" class="feedback" role="status"></p>
+            <div id="specialists" class="list"></div>
+          </article>
+        </section>
+
+        <section id="screen-residents" class="app-screen hidden">
+          <article id="chairman-registry" class="card screen-card">
+          <h3>Реестр собственников</h3>
+          <details id="registry-upload" class="upload-panel">
+            <summary>Загрузить или обновить реестр</summary>
+            <p class="muted">GigaChat Ultra прочитает PDF. Проверьте записи перед сохранением; коды сообщайте собственникам лично.</p>
+            <form id="registry-form">
+              <input id="registry-file" type="file" accept="application/pdf,.pdf" required />
+              <button type="submit">Проверить реестр</button>
+            </form>
+            <div id="registry-preview" class="notice hidden">
+              <p id="preview-text"></p>
+              <div id="preview-residents" class="list preview-list"></div>
+              <button id="confirm-registry" type="button">Подтвердить загрузку</button>
+            </div>
+          </details>
+          <p id="registry-message" class="feedback" role="status"></p>
+          <label for="resident-search">Найти собственника</label>
+          <input id="resident-search" type="search" placeholder="ФИО или номер помещения" />
+          <div id="residents" class="list"></div>
+          <div id="residents-pagination" class="pagination hidden"></div>
+          </article>
+        </section>
+
+        <section id="screen-requests" class="app-screen hidden">
+          <article id="request-list-card" class="card screen-card">
+            <h3 id="requests-heading">Заявки</h3>
+            <p id="requests-message" class="feedback" role="status"></p>
+            <div id="requests" class="list"></div>
+            <div id="requests-pagination" class="pagination hidden"></div>
+          </article>
+          <article id="request-detail-card" class="card screen-card hidden">
+            <button id="request-back" type="button" class="secondary">← К списку заявок</button>
+            <div id="request-detail"></div>
+            <p id="request-detail-message" class="feedback" role="status"></p>
+          </article>
+        </section>
+
+        <nav id="app-nav" class="app-nav" aria-label="Разделы приложения">
+          <button type="button" class="nav-button is-active" data-screen="profile" aria-current="page">
+            <span class="nav-icon" aria-hidden="true">⌂</span><span>Профиль</span>
+          </button>
+          <button type="button" id="nav-middle" class="nav-button" data-screen="residents">
+            <span class="nav-icon" aria-hidden="true">▦</span><span id="nav-middle-label">Жители</span>
+          </button>
+          <button type="button" id="nav-specialists" class="nav-button hidden" data-screen="specialists">
+            <span class="nav-icon" aria-hidden="true">⚒</span><span>Специалисты</span>
+          </button>
+          <button type="button" class="nav-button" data-screen="requests">
+            <span class="nav-icon" aria-hidden="true">☷</span><span id="nav-requests-label">Заявки</span>
+          </button>
+        </nav>
       </section>
     </main>
+    <div id="photo-viewer" class="photo-viewer hidden" role="dialog" aria-modal="true" aria-label="Просмотр фотографии">
+      <button id="photo-viewer-close" type="button" class="photo-viewer-close" aria-label="Закрыть фото">×</button>
+      <button id="photo-viewer-prev" type="button" class="photo-viewer-arrow photo-viewer-prev" aria-label="Предыдущее фото">‹</button>
+      <div class="photo-viewer-content">
+        <img id="photo-viewer-image" class="hidden" alt="Фотография заявки" />
+        <p id="photo-viewer-message" role="status"></p>
+      </div>
+      <button id="photo-viewer-next" type="button" class="photo-viewer-arrow photo-viewer-next" aria-label="Следующее фото">›</button>
+      <div id="photo-viewer-count" class="photo-viewer-count" aria-live="polite"></div>
+    </div>
   </body>
 </html>
