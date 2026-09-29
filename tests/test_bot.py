@@ -170,7 +170,6 @@ class BotTests(unittest.TestCase):
                 },
                 store,
                 bot_username="smart_city_bot",
-                specialist_user_ids=frozenset(),
             )
             self.assertEqual(store.get(44).phone, "+79969433497")
             expected = api.sent[0][1]["attachments"]
@@ -194,7 +193,6 @@ class BotTests(unittest.TestCase):
                         },
                         store,
                         bot_username="smart_city_bot",
-                        specialist_user_ids=frozenset(),
                     )
                     self.assertEqual(restarted.sent[0][1]["attachments"], expected)
 
@@ -204,7 +202,6 @@ class BotTests(unittest.TestCase):
                 {"update_type": "bot_started", "user": {"user_id": 44}},
                 store,
                 bot_username="smart_city_bot",
-                specialist_user_ids=frozenset(),
             )
             self.assertEqual(started.sent[0][1]["attachments"], expected)
 

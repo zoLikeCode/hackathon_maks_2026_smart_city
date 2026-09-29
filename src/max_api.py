@@ -98,7 +98,7 @@ class MaxApi:
                 "marker": marker,
                 "timeout": timeout,
                 "limit": limit,
-                "types": "bot_started,message_created,message_callback",
+                "types": "bot_started,bot_added,bot_removed,bot_admin_permissions_changed,message_created,message_callback",
             },
             timeout=timeout + 10,
         )
@@ -123,6 +123,14 @@ class MaxApi:
             body=body,
         )
 
+    def get_chat(self, chat_id: int) -> dict[str, Any]:
+        return self._request("GET", f"/chats/{chat_id}", timeout=10)
+
+    def leave_chat(self, chat_id: int) -> None:
+        result = self._request("DELETE", f"/chats/{chat_id}/members/me", timeout=10)
+        if result.get("success") is not True:
+            raise MaxApiError(f"MAX не подтвердил выход из чата: {result.get('message') or 'неизвестная ошибка'}")
+
     def verify_contact(self, vcf_info: str, signature: str) -> bool:
         """Проверяет, что контакт отправлен кнопкой request_contact этого бота."""
         return verify_contact_signature(self._token, vcf_info, signature)
@@ -143,6 +151,7 @@ class MaxApi:
         if parsed.scheme != "https" or not parsed.hostname:
             raise MaxApiError("MAX передал некорректную ссылку на файл")
         request = Request(url, headers={"Accept": "application/octet-stream"}, method="GET")
+        size_error = f"Файл превышает допустимый размер {max_bytes // (1024 * 1024)} МБ"
         try:
             with urlopen(  # noqa: S310
                 request,
@@ -151,7 +160,7 @@ class MaxApi:
             ) as response:
                 declared_size = response.headers.get("Content-Length")
                 if declared_size and int(declared_size) > max_bytes:
-                    raise MaxApiError("Файл превышает допустимый размер 40 МБ")
+                    raise MaxApiError(size_error)
                 content = response.read(max_bytes + 1)
         except HTTPError as error:
             raise MaxApiError(f"MAX не отдал файл: HTTP {error.code}") from error
@@ -160,5 +169,5 @@ class MaxApi:
         except TimeoutError as error:
             raise MaxApiError("MAX не отдал файл вовремя") from error
         if len(content) > max_bytes:
-            raise MaxApiError("Файл превышает допустимый размер 40 МБ")
+            raise MaxApiError(size_error)
         return content
