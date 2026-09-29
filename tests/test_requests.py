@@ -238,6 +238,21 @@ class RequestApiTests(unittest.TestCase):
         self.assertEqual(self.call("/api/requests", user_id=500, start_param="role_owner")[0], 403)
         self.assertEqual(self.call("/api/profile", user_id=500, start_param="role_owner")[0], 403)
 
+    def test_specialist_request_store_failure_returns_json(self) -> None:
+        class FailingRequestStore:
+            def list_all(self) -> list:
+                raise RuntimeError("database unavailable")
+
+        self.server._request_repository = FailingRequestStore()
+        self.handler_type = self.server._handler()
+        with self.assertLogs("src.mini_app", level="ERROR") as logs:
+            status, payload = self.call(
+                "/api/requests", user_id=500, start_param="role_specialist"
+            )
+        self.assertEqual(status, 503)
+        self.assertEqual(payload, {"error": "Не удалось загрузить заявки. Попробуйте ещё раз."})
+        self.assertIn("database unavailable", "\n".join(logs.output))
+
     def test_role_launch_cannot_be_spoofed_or_changed_without_signature(self) -> None:
         self.assertEqual(self.call("/api/session", user_id=500)[0], 403)
         self.assertEqual(self.call("/api/session?start_param=role_specialist", user_id=500)[0], 403)

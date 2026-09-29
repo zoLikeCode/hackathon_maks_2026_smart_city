@@ -6,9 +6,9 @@
     <meta name="color-scheme" content="light" />
     <meta name="theme-color" content="#e7f3f6" />
     <title>Умный город — рабочее пространство</title>
-    <link rel="stylesheet" href="/styles.css?v=glass-2" />
+    <link rel="stylesheet" href="/styles.css?v=glass-3" />
     <script src="https://st.max.ru/js/max-web-app.js"></script>
-    <script src="/app.js?v=glass-2" defer></script>
+    <script src="/app.js?v=glass-3" defer></script>
   </head>
   <body>
     <svg class="icon-sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
@@ -75,6 +75,14 @@
         </header>
 
         <main class="main-content">
+          <section id="specialist-request-status" class="request-load-state hidden" role="alert" aria-labelledby="request-load-title">
+            <span class="request-load-index">ЗАЯВКИ / СОЕДИНЕНИЕ</span>
+            <div class="request-load-mark" aria-hidden="true">!</div>
+            <h1 id="request-load-title">Рабочее пространство открыто<span class="accent">.</span></h1>
+            <p>Список заявок пока не загрузился. Данные и счётчики появятся после восстановления связи.</p>
+            <p id="specialist-request-error" class="request-load-detail"></p>
+            <button id="retry-specialist-requests" type="button">Повторить загрузку</button>
+          </section>
           <section id="overview-view" class="overview-view" aria-labelledby="overview-title">
             <div class="overview-topline"><span class="route-kicker"><span class="route-kicker-dot"></span> ГОРОД В РАБОТЕ</span><span id="overview-date-label">—</span></div>
             <div class="overview-hero">

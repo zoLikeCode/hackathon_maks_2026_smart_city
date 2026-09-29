@@ -223,12 +223,21 @@ class MiniAppServer:
                 if role == "owner" or (role == "chairman" and profile is None):
                     self._json(HTTPStatus.FORBIDDEN, {"error": "Демо-кабинет не содержит реальных заявок"})
                     return
-                requests = (
-                    request_repository.list_all()
-                    if role == "specialist"
-                    else request_repository.list_for_space(profile.space_id)
-                )
-                self._json(HTTPStatus.OK, {"requests": [item.as_dict() for item in requests]})
+                try:
+                    requests = (
+                        request_repository.list_all()
+                        if role == "specialist"
+                        else request_repository.list_for_space(profile.space_id)
+                    )
+                    items = [item.as_dict() for item in requests]
+                except Exception:
+                    logger.exception("Failed to load service requests for role %s", role)
+                    self._json(
+                        HTTPStatus.SERVICE_UNAVAILABLE,
+                        {"error": "Не удалось загрузить заявки. Попробуйте ещё раз."},
+                    )
+                    return
+                self._json(HTTPStatus.OK, {"requests": items})
 
             def _body(self) -> dict[str, Any] | None:
                 if self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower() != "application/json":

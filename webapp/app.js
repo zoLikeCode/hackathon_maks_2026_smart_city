@@ -76,7 +76,8 @@ async function api(path, options = {}) {
   try {
     payload = await response.json();
   } catch {
-    throw new Error("Сервис временно недоступен. Попробуйте ещё раз.");
+    const status = response.status ? `HTTP ${response.status}` : "без статуса";
+    throw new Error(`Не удалось прочитать ответ сервиса (${status}). Попробуйте ещё раз.`);
   }
   if (!response.ok) throw new Error(payload.error || "Не удалось выполнить запрос");
   return payload;
@@ -496,7 +497,37 @@ function renderSpecialistIdentity(session) {
   $(".profile-avatar").textContent = name.charAt(0).toLocaleUpperCase("ru-RU");
 }
 
+async function loadSpecialistRequests() {
+  const retry = $("#retry-specialist-requests");
+  retry.disabled = true;
+  retry.textContent = "Загружаем…";
+  try {
+    const result = await api("/api/requests");
+    if (!Array.isArray(result.requests)) {
+      throw new Error("Сервис вернул некорректные данные заявок. Попробуйте ещё раз.");
+    }
+    state.requests = result.requests;
+    $("#specialist-request-status").classList.add("hidden");
+    $("#specialist").classList.remove("requests-unavailable");
+    $("#loading").classList.add("hidden");
+    $("#specialist").classList.remove("hidden");
+    render();
+    setView(state.view);
+  } catch (error) {
+    state.requests = [];
+    $("#specialist-request-error").textContent = error.message || "Не удалось загрузить заявки. Попробуйте ещё раз.";
+    $("#specialist-request-status").classList.remove("hidden");
+    $("#specialist").classList.add("requests-unavailable");
+    $("#loading").classList.add("hidden");
+    $("#specialist").classList.remove("hidden");
+  } finally {
+    retry.disabled = false;
+    retry.textContent = "Повторить загрузку";
+  }
+}
+
 function bindEvents() {
+  $("#retry-specialist-requests").addEventListener("click", loadSpecialistRequests);
   $$("[data-view]").forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
   $$(".brand, .mobile-brand").forEach((link) => link.addEventListener("click", (event) => {
     event.preventDefault();
@@ -654,13 +685,8 @@ async function start() {
   try {
     const session = await api("/api/session");
     if (session.role === "specialist") {
-      const result = await api("/api/requests");
-      state.requests = Array.isArray(result.requests) ? result.requests : [];
       renderSpecialistIdentity(session);
-      $("#loading").classList.add("hidden");
-      $("#specialist").classList.remove("hidden");
-      render();
-      setView("overview");
+      await loadSpecialistRequests();
     } else if (session.role === "chairman") {
       if (session.demo_access) {
         renderRoleDemo("chairman", session.display_name, session.phone);
