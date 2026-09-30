@@ -1124,6 +1124,7 @@ function bindEvents() {
 }
 
 async function start() {
+  if (window.WebApp?.platform === "android") document.documentElement.classList.add("max-android");
   initializeTheme();
   bindEvents();
   state.selectedDate = localISO(new Date());
