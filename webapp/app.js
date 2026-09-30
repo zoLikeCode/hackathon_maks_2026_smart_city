@@ -197,9 +197,9 @@ function updateMetrics() {
   $("#metric-total").textContent = numberLabel(state.requests.length);
   $("#metric-urgent").textContent = numberLabel(attention);
   $("#overview-attention").textContent = numberLabel(open);
-  $("#overview-lead").textContent = open
-    ? countLabel(open, "активная заявка", "активные заявки", "активных заявок") + " в работе"
-    : "Активных заявок сейчас нет";
+  $("#overview-lead").textContent = attention
+    ? countLabel(attention, "заявка требует", "заявки требуют", "заявок требуют") + " внимания"
+    : "Срочных заявок нет";
   $("#metric-scheduled").textContent = numberLabel(state.requests.filter((request) => request.scheduled_for).length);
   $("#profile-open-count").textContent = numberLabel(open);
   $("#profile-done-count").textContent = numberLabel(state.requests.filter((request) => request.status === "done").length);
@@ -271,7 +271,7 @@ function selectCurrentValue(select, value, labels) {
 }
 
 function emptyMarkup(title, text) {
-  return '<div class="empty-state"><span class="empty-symbol" aria-hidden="true">↗</span><h3>' + escapeHtml(title) + '</h3><p>' + escapeHtml(text) + "</p></div>";
+  return '<div class="empty-state"><span class="empty-symbol" aria-hidden="true">›</span><h3>' + escapeHtml(title) + '</h3><p>' + escapeHtml(text) + "</p></div>";
 }
 
 function rowMarkup(request) {
@@ -279,12 +279,12 @@ function rowMarkup(request) {
   const id = escapeHtml(request.id);
   const code = escapeHtml(requestCode(request.id));
   return '<div class="request-row" data-id="' + id + '">'
-    + '<div class="priority-cell"><span class="priority-caption">Приоритет</span><span class="priority-mark priority-' + escapeHtml(request.priority) + '"></span><select class="priority-select priority-' + escapeHtml(request.priority) + '" data-priority-id="' + id + '" aria-label="Приоритет заявки № ' + code + '"' + (request.read_only || state.session?.demo_access || (request.priority === "emergency" && request.status !== "done") ? ' disabled' : '') + '>' + priorityOptions(request.priority) + '</select></div>'
+    + '<div class="priority-cell"><span class="priority-caption">Приоритет</span><select class="priority-select priority-' + escapeHtml(request.priority) + '" data-priority-id="' + id + '" aria-label="Приоритет заявки № ' + code + '"' + (request.read_only || state.session?.demo_access || (request.priority === "emergency" && request.status !== "done") ? ' disabled' : '') + '>' + priorityOptions(request.priority) + '</select></div>'
     + '<button type="button" class="request-open" data-open="' + id + '"><span class="request-number"><span class="ticket-code">№ ' + code + '</span><span class="ticket-category">' + escapeHtml(request.category) + '</span></span><strong>' + escapeHtml(request.title) + '</strong></button>'
     + '<div class="address-cell">' + escapeHtml(request.address) + '</div>'
     + '<div class="date-cell">' + (request.scheduled_for ? escapeHtml(dateLabel(request.scheduled_for)) : '<span class="muted">Не назначена</span>') + '</div>'
-    + '<div class="status-cell"><span class="status-caption">Статус</span><span class="status-dot status-' + escapeHtml(request.status) + '"></span>' + escapeHtml(status) + '</div>'
-    + '<button type="button" class="row-arrow" data-open="' + id + '" aria-label="Открыть заявку № ' + code + '">↗</button>'
+    + '<div class="status-cell"><span class="status-caption">Статус</span>' + escapeHtml(status) + '</div>'
+    + '<button type="button" class="row-arrow" data-open="' + id + '" aria-label="Открыть заявку № ' + code + '">›</button>'
     + "</div>";
 }
 
@@ -300,19 +300,17 @@ function renderOverview() {
     .sort((a, b) => (PRIORITY[a.priority]?.order ?? 4) - (PRIORITY[b.priority]?.order ?? 4)
       || String(a.scheduled_for || "9999").localeCompare(String(b.scheduled_for || "9999")))
     .slice(0, 3);
-  $("#overview-focus").innerHTML = focus.length ? focus.map((request, index) =>
+  $("#overview-focus").innerHTML = focus.length ? focus.map((request) =>
     '<button type="button" class="focus-item" data-open="' + escapeHtml(request.id) + '">'
-    + '<span class="focus-index">' + String(index + 1).padStart(2, "0") + '</span>'
     + '<span class="focus-content"><span class="focus-meta">№ ' + escapeHtml(requestCode(request.id)) + ' · ' + escapeHtml(request.address) + '</span><strong>' + escapeHtml(request.title) + '</strong><span class="focus-status"><span class="focus-tag focus-priority priority-' + escapeHtml(request.priority) + '">' + escapeHtml(priorityLabel(request.priority)) + '</span><span class="focus-tag focus-workflow status-' + escapeHtml(request.status) + '">' + escapeHtml(statusLabel(request.status)) + '</span><span class="focus-tag focus-date">' + (request.scheduled_for ? escapeHtml(dateLabel(request.scheduled_for)) : 'Без даты') + '</span></span></span>'
-    + '<span class="focus-arrow" aria-hidden="true">↗</span></button>'
+    + '<span class="focus-arrow" aria-hidden="true">›</span></button>'
   ).join("") : emptyMarkup(state.requests.length ? "Заявок в работе нет" : "Заявок пока нет", state.requests.length ? "Все текущие заявки завершены или отклонены." : "Новые обращения появятся здесь, когда жители отправят их через MAX.");
 }
 
 function agendaMarkup(request, undated = false) {
   return '<button class="' + (undated ? "undated-item" : "agenda-item") + '" type="button" data-open="' + escapeHtml(request.id) + '">'
-    + '<span class="agenda-priority priority-' + escapeHtml(request.priority) + '"></span>'
     + '<span class="agenda-body"><strong class="agenda-title">' + escapeHtml(request.title) + '</strong><span class="agenda-meta">' + escapeHtml(request.address) + '</span><span class="agenda-tags"><span class="agenda-status status-' + escapeHtml(request.status) + '">' + escapeHtml(statusLabel(request.status)) + '</span><span class="agenda-priority-label priority-' + escapeHtml(request.priority) + '">' + escapeHtml(priorityLabel(request.priority)) + '</span></span></span>'
-    + '<span class="agenda-arrow" aria-hidden="true">↗</span></button>';
+    + '<span class="agenda-arrow" aria-hidden="true">›</span></button>';
 }
 
 function renderAgenda(items) {
@@ -348,7 +346,7 @@ function renderCalendar(items) {
       + '<span class="month-request-date">' + escapeHtml(dateLabel(request.scheduled_for)) + '</span>'
       + '<span class="month-request-main"><strong>' + escapeHtml(request.title) + '</strong><small>' + escapeHtml(request.address) + '</small></span>'
       + '<span class="month-request-tags"><span class="status-' + escapeHtml(request.status) + '">' + escapeHtml(statusLabel(request.status)) + '</span><span class="priority-' + escapeHtml(request.priority) + '">' + escapeHtml(priorityLabel(request.priority)) + '</span></span>'
-      + '<span class="month-request-arrow" aria-hidden="true">↗</span></button>'
+      + '<span class="month-request-arrow" aria-hidden="true">›</span></button>'
     ).join("") : '<p class="month-request-empty">На этот месяц заявок с датой выезда нет. Заявки без даты показаны выше.</p>';
   }
   const todayIso = localISO(new Date());
@@ -358,7 +356,7 @@ function renderCalendar(items) {
     a.scheduled_for.localeCompare(b.scheduled_for) || (PRIORITY[a.priority]?.order ?? 4) - (PRIORITY[b.priority]?.order ?? 4)
   ).slice(0, 3);
   $("#calendar-mobile-agenda").innerHTML = '<div class="mobile-agenda-head"><span>По датам</span><span>' + countLabel(monthItems.length, "заявка", "заявки", "заявок") + ' в месяце</span></div>'
-    + (previewItems.length ? previewItems.map((request) => '<button type="button" class="mobile-agenda-item" data-open="' + escapeHtml(request.id) + '"><span class="mobile-agenda-date"><strong>' + escapeHtml(parseDay(request.scheduled_for).getDate()) + '</strong><small>' + escapeHtml(dateLabel(request.scheduled_for, { month: "short" })) + '</small></span><span class="mobile-agenda-body"><strong>' + escapeHtml(request.title) + '</strong><small>' + escapeHtml(request.address) + ' · ' + escapeHtml(priorityLabel(request.priority)) + (isClosed(request) ? ' · ' + escapeHtml(statusLabel(request.status)) : '') + '</small></span><span class="mobile-agenda-arrow" aria-hidden="true">↗</span></button>').join("") : '<p class="mobile-agenda-empty">Запланированных выездов пока нет.</p>');
+    + (previewItems.length ? previewItems.map((request) => '<button type="button" class="mobile-agenda-item" data-open="' + escapeHtml(request.id) + '"><span class="mobile-agenda-date"><strong>' + escapeHtml(parseDay(request.scheduled_for).getDate()) + '</strong><small>' + escapeHtml(dateLabel(request.scheduled_for, { month: "short" })) + '</small></span><span class="mobile-agenda-body"><strong>' + escapeHtml(request.title) + '</strong><small>' + escapeHtml(request.address) + ' · ' + escapeHtml(priorityLabel(request.priority)) + (isClosed(request) ? ' · ' + escapeHtml(statusLabel(request.status)) : '') + '</small></span><span class="mobile-agenda-arrow" aria-hidden="true">›</span></button>').join("") : '<p class="mobile-agenda-empty">Запланированных выездов пока нет.</p>');
   const firstWeekday = (new Date(year, month, 1).getDay() + 6) % 7;
   const lastDay = new Date(year, month + 1, 0).getDate();
   const cells = Math.ceil((firstWeekday + lastDay) / 7) * 7;
@@ -379,7 +377,7 @@ function renderCalendar(items) {
     const eventsMarkup = events.slice(0, 2).map((request) => '<span class="calendar-event priority-' + escapeHtml(request.priority) + '">' + escapeHtml(request.title) + "</span>").join("");
     const more = events.length > 2 ? '<span class="calendar-more">+' + (events.length - 2) + " ещё</span>" : "";
     const count = events.length ? '<span class="day-count">' + events.length + "</span>" : "";
-    html.push('<button type="button" class="' + classes + '" data-date="' + iso + '" aria-label="' + escapeHtml(dateLabel(iso, { day: "numeric", month: "long", year: "numeric" })) + ', ' + countLabel(events.length, "заявка", "заявки", "заявок") + '"><span class="day-heading"><span class="day-number">' + day.getDate() + "</span>" + count + '</span><span class="day-events">' + eventsMarkup + more + '</span><span class="day-dot' + (events.length ? " has-events" : "") + '"></span></button>');
+    html.push('<button type="button" class="' + classes + '" data-date="' + iso + '" aria-label="' + escapeHtml(dateLabel(iso, { day: "numeric", month: "long", year: "numeric" })) + ', ' + countLabel(events.length, "заявка", "заявки", "заявок") + '"><span class="day-heading"><span class="day-number">' + day.getDate() + "</span>" + count + '</span><span class="day-events">' + eventsMarkup + more + '</span></button>');
   }
   $("#calendar-grid").innerHTML = html.join("");
   renderAgenda(items);
@@ -683,10 +681,10 @@ function renderChairmanRequests() {
   $("#chairman-request-list").innerHTML = requests.length ? requests.map((request) =>
     `<button type="button" class="chairman-request" data-chairman-open="${escapeHtml(request.id)}">` +
       `<span class="chairman-request-code">№ ${escapeHtml(requestCode(request.id))}</span>` +
-      `<span class="chairman-request-status"><i class="status-dot status-${escapeHtml(request.status)}"></i>${escapeHtml(statusLabel(request.status))}</span>` +
+      `<span class="chairman-request-status">${escapeHtml(statusLabel(request.status))}</span>` +
       `<strong>${escapeHtml(request.title)}</strong>` +
       `<span class="chairman-request-meta">${escapeHtml(visitLabel(request))} · ${escapeHtml(priorityLabel(request.priority))}${request.photo_count ? ` · ${request.photo_count} фото` : ""}${request.read_only ? " · Архив" : ""}</span>` +
-      `<span class="chairman-request-arrow" aria-hidden="true">↗</span></button>`
+      `<span class="chairman-request-arrow" aria-hidden="true">›</span></button>`
   ).join("") : emptyMarkup("Заявок пока нет", state.session?.role === "owner"
     ? "Создайте заявку с фотографиями в чате с ботом MAX."
     : "Заявки жителей появятся здесь после отправки в боте MAX.");
@@ -819,7 +817,7 @@ async function renderSpecialists() {
     card.append(info);
     const edit = document.createElement("details");
     edit.className = "specialist-edit";
-    edit.innerHTML = "<summary>Данные и рабочие часы <span aria-hidden=\"true\">↗</span></summary>";
+    edit.innerHTML = "<summary>Данные и рабочие часы <span aria-hidden=\"true\">›</span></summary>";
     const form = document.createElement("form");
     form.className = "compact-form";
     const typeLabel = document.createElement("label");
