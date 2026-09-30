@@ -280,7 +280,7 @@ function rowMarkup(request) {
   const code = escapeHtml(requestCode(request.id));
   return '<div class="request-row" data-id="' + id + '">'
     + '<div class="priority-cell"><span class="priority-caption">Приоритет</span><select class="priority-select priority-' + escapeHtml(request.priority) + '" data-priority-id="' + id + '" aria-label="Приоритет заявки № ' + code + '"' + (request.read_only || state.session?.demo_access || (request.priority === "emergency" && request.status !== "done") ? ' disabled' : '') + '>' + priorityOptions(request.priority) + '</select></div>'
-    + '<button type="button" class="request-open" data-open="' + id + '"><span class="request-number"><span class="ticket-code">№ ' + code + '</span><span class="ticket-category">' + escapeHtml(request.category) + '</span></span><strong>' + escapeHtml(request.title) + '</strong></button>'
+    + '<button type="button" class="request-open" data-open="' + id + '"><span class="request-number"><span class="ticket-code">№ ' + code + '</span><span class="ticket-category">' + escapeHtml(request.category) + '</span>' + (request.photo_count ? '<span class="request-photo-count">' + escapeHtml(String(request.photo_count)) + ' фото</span>' : '') + '</span><strong>' + escapeHtml(request.title) + '</strong></button>'
     + '<div class="address-cell">' + escapeHtml(request.address) + '</div>'
     + '<div class="date-cell">' + (request.scheduled_for ? escapeHtml(dateLabel(request.scheduled_for)) : '<span class="muted">Не назначена</span>') + '</div>'
     + '<div class="status-cell"><span class="status-caption">Статус</span>' + escapeHtml(status) + '</div>'
@@ -302,7 +302,7 @@ function renderOverview() {
     .slice(0, 3);
   $("#overview-focus").innerHTML = focus.length ? focus.map((request) =>
     '<button type="button" class="focus-item" data-open="' + escapeHtml(request.id) + '">'
-    + '<span class="focus-content"><span class="focus-meta">№ ' + escapeHtml(requestCode(request.id)) + ' · ' + escapeHtml(request.address) + '</span><strong>' + escapeHtml(request.title) + '</strong><span class="focus-status"><span class="focus-tag focus-priority priority-' + escapeHtml(request.priority) + '">' + escapeHtml(priorityLabel(request.priority)) + '</span><span class="focus-tag focus-workflow status-' + escapeHtml(request.status) + '">' + escapeHtml(statusLabel(request.status)) + '</span><span class="focus-tag focus-date">' + (request.scheduled_for ? escapeHtml(dateLabel(request.scheduled_for)) : 'Без даты') + '</span></span></span>'
+    + '<span class="focus-content"><span class="focus-meta">№ ' + escapeHtml(requestCode(request.id)) + ' · ' + escapeHtml(request.address) + '</span><strong>' + escapeHtml(request.title) + '</strong><span class="focus-status"><span class="focus-tag focus-priority priority-' + escapeHtml(request.priority) + '">' + escapeHtml(priorityLabel(request.priority)) + '</span><span class="focus-tag focus-workflow status-' + escapeHtml(request.status) + '">' + escapeHtml(statusLabel(request.status)) + '</span><span class="focus-tag focus-date">' + (request.scheduled_for ? escapeHtml(dateLabel(request.scheduled_for)) : 'Без даты') + '</span>' + (request.photo_count ? '<span class="request-photo-count">' + escapeHtml(String(request.photo_count)) + ' фото</span>' : '') + '</span></span>'
     + '<span class="focus-arrow" aria-hidden="true">›</span></button>'
   ).join("") : emptyMarkup(state.requests.length ? "Заявок в работе нет" : "Заявок пока нет", state.requests.length ? "Все текущие заявки завершены или отклонены." : "Новые обращения появятся здесь, когда жители отправят их через MAX.");
 }
@@ -552,9 +552,14 @@ function movePhoto(step) {
 function loadRequestPhotos(request) {
   releaseRequestPhotos();
   const count = Math.min(3, Number(request.photo_count) || 0);
-  $("#dialog-photos-section").classList.toggle("hidden", count === 0);
+  $("#dialog-photos-section").classList.remove("hidden");
   $("#dialog-photo-count").textContent = String(count);
-  if (!count) return;
+  if (!count) {
+    $("#dialog-photo-message").textContent = state.preview
+      ? "В демонстрационных заявках фотографии не прикреплены."
+      : "К этой заявке фотографии не приложены.";
+    return;
+  }
   state.photoRequestId = request.id;
   const epoch = state.photoEpoch;
   for (let position = 1; position <= count; position += 1) {
@@ -700,9 +705,10 @@ function renderChairman(profile, requests = []) {
   $(".chairman-mobile-nav").setAttribute("aria-label", owner ? "Разделы собственника" : "Разделы председателя");
   $$("[data-chairman-only]").forEach((button) => button.classList.toggle("hidden", owner));
   $("#chairman-main-action").classList.toggle("hidden", owner);
+  $("#owner-create-guide").classList.toggle("hidden", !owner);
   $("#chairman-requests-heading").textContent = owner ? "Мои заявки" : "Заявки дома";
   $("#chairman-requests-view .chairman-subtitle").textContent = owner
-    ? "Заявки по вашим помещениям. Новую заявку с фотографиями создайте в боте MAX."
+    ? "Заявки по вашим помещениям."
     : state.session?.demo_access ? "Демонстрационный кабинет. Создание специалистов здесь показывается без сохранения на сервере."
       : "Все обращения жителей и их текущий статус.";
   $("#chairman-specialists-view .chairman-subtitle").textContent = state.session?.demo_access

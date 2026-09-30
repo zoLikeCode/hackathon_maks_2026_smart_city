@@ -15,9 +15,9 @@
         document.querySelector('meta[name="theme-color"]').content = theme === "dark" ? "#172331" : "#f5f7fa";
       })();
     </script>
-    <link rel="stylesheet" href="/styles.css?v=civic-2" />
+    <link rel="stylesheet" href="/styles.css?v=civic-3" />
     <script src="https://st.max.ru/js/max-web-app.js"></script>
-    <script src="/app.js?v=civic-2" defer></script>
+    <script src="/app.js?v=civic-3" defer></script>
   </head>
   <body>
     <svg class="icon-sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
@@ -128,7 +128,7 @@
         <button type="button" data-chairman-view="profile"><svg aria-hidden="true"><use href="#icon-profile"></use></svg><span>Профиль</span></button>
       </nav>
       <main class="chairman-main">
-        <section id="chairman-requests-view" class="chairman-view"><p class="section-kicker">Заявки дома</p><h1 id="chairman-requests-heading">Заявки</h1><p class="chairman-subtitle">Все обращения и их текущий статус.</p><button type="button" class="chairman-primary-action" id="chairman-main-action" data-chairman-view="specialists">Добавить специалиста <span aria-hidden="true">›</span></button><div id="chairman-request-list" class="chairman-request-list"></div></section>
+        <section id="chairman-requests-view" class="chairman-view"><p class="section-kicker">Заявки дома</p><h1 id="chairman-requests-heading">Заявки</h1><p class="chairman-subtitle">Все обращения и их текущий статус.</p><button type="button" class="chairman-primary-action" id="chairman-main-action" data-chairman-view="specialists">Добавить специалиста <span aria-hidden="true">›</span></button><section id="owner-create-guide" class="owner-create-guide hidden" aria-labelledby="owner-create-title"><h2 id="owner-create-title">Новая заявка</h2><p>Заявка создаётся в личном чате с ботом MAX.</p><ol><li>Вернитесь в чат с ботом. Нажмите «Быстро создать заявку» или отправьте <code>/request</code>.</li><li>Опишите проблему и прикрепите до 3 фотографий (каждая до 10 МБ).</li><li>Нажмите «Отправить заявку». После отправки она появится здесь.</li></ol></section><div id="chairman-request-list" class="chairman-request-list"></div></section>
         <section id="chairman-specialists-view" class="chairman-view hidden"><p class="section-kicker">Команда ТСЖ</p><h1>Специалисты</h1><p class="chairman-subtitle">Добавьте исполнителя по подтверждённому номеру MAX.</p>
           <div class="chairman-tool-panel">
             <form id="specialist-form" class="new-request-form">

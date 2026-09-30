@@ -145,6 +145,7 @@ textarea:focus-visible, summary:focus-visible { outline: 2px solid var(--action)
 .focus-content strong { display: block; overflow-wrap: anywhere; font-size: 16px; font-weight: 700; line-height: 1.25; letter-spacing: 0; }
 .focus-status { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; color: var(--muted); font-size: 11px; line-height: 1.35; }
 .focus-tag { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface-muted); color: var(--muted); white-space: nowrap; }
+.request-photo-count { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-muted); color: var(--muted); font-size: 11px; font-weight: 650; line-height: 1.2; white-space: nowrap; }
 .focus-priority.priority-urgent { border-color: rgba(243, 164, 121, .38); color: var(--muted); }
 .focus-priority.priority-high { border-color: rgba(233, 172, 105, .34); color: var(--muted); }
 .focus-priority.priority-planned { border-color: rgba(216, 203, 163, .36); color: var(--muted); }
@@ -348,6 +349,11 @@ textarea:focus-visible, summary:focus-visible { outline: 2px solid var(--action)
 .chairman-primary-action:hover, .new-request-form > button:hover { filter: brightness(1.14); }
 .chairman-primary-action { width: 100%; margin-top: 20px; }
 .chairman-primary-action span, .new-request-form > button span { font-size: 20px; font-weight: 400; }
+.owner-create-guide { max-width: 980px; margin-top: 21px; padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--card-shadow); }
+.owner-create-guide h2 { margin: 0 0 7px; font-size: 18px; font-weight: 700; line-height: 1.25; }
+.owner-create-guide p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
+.owner-create-guide ol { display: grid; gap: 7px; margin: 12px 0 0; padding-left: 21px; color: var(--ink); font-size: 12px; line-height: 1.4; }
+.owner-create-guide li::marker { color: var(--action); font-weight: 750; }
 .chairman-request-list { display: grid; gap: 14px; margin-top: 23px; }
 .chairman-request { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; width: 100%; min-height: 100px; padding: 16px 42px 16px 15px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--card-shadow); color: var(--ink); text-align: left; }
 .chairman-request:hover { background: var(--surface-muted); }
@@ -387,6 +393,8 @@ textarea:focus-visible, summary:focus-visible { outline: 2px solid var(--action)
 .dialog-photos-section h3 { display: flex; align-items: baseline; gap: 7px; margin: 0 0 12px; font-size: 17px; font-weight: 660; letter-spacing: -.025em; }
 .dialog-photos-section h3 span { color: var(--subtle); font-size: 12px; }
 .dialog-photos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
+.dialog-photos:empty { display: none; }
+.dialog-photos:empty + .dialog-feedback { margin-top: 0; padding: 12px 13px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-muted); color: var(--muted); font-size: 12px; line-height: 1.4; }
 .dialog-photo-button { position: relative; display: grid; place-items: center; aspect-ratio: 1; min-width: 0; min-height: 70px; padding: 0; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--control-bg); color: var(--muted); cursor: zoom-in; }
 .dialog-photo-button img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .dialog-photo-button .photo-placeholder { font-size: 20px; }
@@ -602,6 +610,8 @@ textarea:focus-visible, summary:focus-visible { outline: 2px solid var(--action)
   .chairman-main h1 { font-size: clamp(36px, 4vw, 49px); }
   .chairman-subtitle { font-size: 15px; }
   .chairman-primary-action { width: min(100%, 410px); margin-top: 29px; }
+  .owner-create-guide { margin-top: 27px; padding: 20px 22px; }
+  .owner-create-guide ol { gap: 5px; }
   .chairman-request-list { max-width: 980px; margin-top: 31px; }
   .chairman-request strong { font-size: 18px; }
   #chairman-specialists-view .new-request-form { max-width: 610px; margin-top: 31px; }
