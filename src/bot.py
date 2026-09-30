@@ -192,9 +192,7 @@ def send_authorized_profile(
     )
 
 
-def role_switch_keyboard(bot_username: str | None) -> list[dict[str, Any]] | None:
-    if not bot_username:
-        return None
+def role_switch_keyboard(bot_username: str | None) -> list[dict[str, Any]]:
     labels = {"specialist": "Специалист", "chairman": "Председатель", "owner": "Собственник"}
     buttons = [
         [{
@@ -204,14 +202,22 @@ def role_switch_keyboard(bot_username: str | None) -> list[dict[str, Any]] | Non
             "payload": start_param,
         }]
         for start_param, role in ROLE_START_PARAMS.items()
-        if role in labels
+        if role in labels and bot_username
     ]
+    buttons.append([{
+        "type": "callback", "text": "Привязать помещение", "payload": "auth:owner:link",
+    }])
     return [{"type": "inline_keyboard", "payload": {"buttons": buttons}}]
 
 
 def send_role_switch_menu(api: MaxApi, user_id: int, bot_username: str | None) -> None:
     api.send_message(
-        "Номер подтверждён. Выберите кабинет для входа в мини-приложение.",
+        ("Номер подтверждён. Выберите кабинет для входа в мини-приложение. "
+         "Настоящие заявки доступны после привязки помещения по коду председателя.")
+        if bot_username else
+        ("Номер подтверждён, но кабинеты пока не открываются: у бота не задано "
+         "публичное имя в MAX. Сообщите администратору. Помещение можно привязать "
+         "по коду председателя кнопкой ниже."),
         user_id=user_id,
         attachments=role_switch_keyboard(bot_username),
     )
@@ -690,7 +696,22 @@ def handle_callback(
         except (ValueError, OverflowError) as error:
             api.send_message(str(error), user_id=user_id)
         return True
-    if isinstance(payload, str) and handle_quick_callback(api, hoa_store, auth_store, user_id, payload):
+    if isinstance(payload, str) and handle_quick_callback(
+        api, hoa_store, auth_store, user_id, payload,
+        role_switch_access=has_role_switch_access(phone_store, user_id),
+    ):
+        return True
+    if payload == "auth:owner:link":
+        if not has_role_switch_access(phone_store, user_id):
+            start_owner_authorization(api, user_id, phone_store, auth_store, hoa_store, bot_username)
+        elif auth_store is None or hoa_store is None:
+            api.send_message("Авторизация пока недоступна.", user_id=user_id)
+        elif memberships := hoa_store.memberships(user_id):
+            auth_store.clear_state(user_id)
+            send_owner_profile(api, user_id, memberships, bot_username)
+        else:
+            auth_store.set_state(user_id, "owner", "awaiting_code")
+            send_owner_code_request(api, user_id=user_id)
         return True
     if payload == "auth:chairman":
         start_chairman_authorization(api, user_id, phone_store, auth_store, bot_username)
@@ -805,7 +826,10 @@ def handle_update(
     command = command.split("@", 1)[0]
     if command == "/request":
         if sender_id is not None and (message.get("recipient") or {}).get("chat_type") == "dialog" and hoa_store:
-            start_quick_request(api, hoa_store, int(sender_id))
+            start_quick_request(
+                api, hoa_store, int(sender_id),
+                role_switch_access=has_role_switch_access(store, int(sender_id)),
+            )
         else:
             api.send_message("Создать заявку можно только в личном диалоге с ботом.", **target)
         return

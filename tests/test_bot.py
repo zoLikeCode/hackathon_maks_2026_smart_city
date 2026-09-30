@@ -4,7 +4,10 @@ import hmac
 import tempfile
 from pathlib import Path
 
+from src.auth_store import SqliteChairmanAuthorizationStore
 from src.bot import HELP_TEXT, WELCOME_TEXT, handle_update, reply_target
+from src.hoa_store import HoaStore
+from src.owner_registry import ResidentEntry
 from src.phone_verification import extract_phone_from_vcard, verify_contact_signature
 from src.verification_store import PhoneVerificationStore
 
@@ -122,9 +125,11 @@ class BotTests(unittest.TestCase):
                     ("Специалист", "role_specialist"),
                     ("Председатель", "role_chairman"),
                     ("Собственник", "role_owner"),
+                    ("Привязать помещение", "auth:owner:link"),
                 ],
             )
-            self.assertTrue(all(row[0]["type"] == "open_app" for row in buttons))
+            self.assertTrue(all(row[0]["type"] == "open_app" for row in buttons[:3]))
+            self.assertEqual(buttons[3][0]["type"], "callback")
 
             restarted = FakeApi(token)
             handle_update(
@@ -175,7 +180,7 @@ class BotTests(unittest.TestCase):
             expected = api.sent[0][1]["attachments"]
             self.assertEqual(
                 [row[0]["payload"] for row in expected[0]["payload"]["buttons"]],
-                ["role_specialist", "role_chairman", "role_owner"],
+                ["role_specialist", "role_chairman", "role_owner", "auth:owner:link"],
             )
 
             for command in ("/start", "/auth", "/profile", "/status"):
@@ -204,6 +209,152 @@ class BotTests(unittest.TestCase):
                 bot_username="smart_city_bot",
             )
             self.assertEqual(started.sent[0][1]["attachments"], expected)
+
+    def test_signed_admin_0500_auth_request_and_owner_link(self) -> None:
+        token = "test-token"
+        vcard = (
+            "BEGIN:VCARD\r\nVERSION:3.0\r\n"
+            "TEL;TYPE=cell:79872660500\r\nFN:Admin\r\nEND:VCARD\r\n"
+        )
+        signature = hmac.new(token.encode(), vcard.encode(), hashlib.sha256).hexdigest()
+        user_id = 42
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "test.sqlite3"
+            phone_store = PhoneVerificationStore(database)
+            auth_store = SqliteChairmanAuthorizationStore(database)
+            hoa_store = HoaStore(None, database)
+            api = FakeApi(token)
+            handle_update(
+                api,
+                {
+                    "update_type": "message_created",
+                    "message": {
+                        "sender": {"user_id": user_id},
+                        "recipient": {"chat_type": "dialog", "user_id": user_id},
+                        "body": {"attachments": [{
+                            "type": "contact", "payload": {"vcf_info": vcard, "hash": signature},
+                        }]},
+                    },
+                },
+                phone_store, auth_store, bot_username="smart_city_bot", hoa_store=hoa_store,
+            )
+            self.assertEqual(phone_store.get(user_id).phone, "+79872660500")
+
+            api.sent.clear()
+            handle_update(
+                api,
+                {
+                    "update_type": "message_created",
+                    "message": {
+                        "sender": {"user_id": user_id},
+                        "recipient": {"chat_type": "dialog", "user_id": user_id},
+                        "body": {"text": "/auth"},
+                    },
+                },
+                phone_store, auth_store, bot_username="smart_city_bot", hoa_store=hoa_store,
+            )
+            self.assertEqual(len(api.sent), 1)
+            auth_buttons = api.sent[0][1]["attachments"][0]["payload"]["buttons"]
+            self.assertEqual(
+                (auth_buttons[3][0]["text"], auth_buttons[3][0]["payload"]),
+                ("Привязать помещение", "auth:owner:link"),
+            )
+
+            api.sent.clear()
+            handle_update(
+                api,
+                {
+                    "update_type": "message_created",
+                    "message": {
+                        "sender": {"user_id": user_id},
+                        "recipient": {"chat_type": "dialog", "user_id": user_id},
+                        "body": {"text": "/auth"},
+                    },
+                },
+                phone_store, auth_store, bot_username=None, hoa_store=hoa_store,
+            )
+            self.assertIn("публичное имя", api.sent[0][0])
+            self.assertEqual(api.sent[0][1]["attachments"][0]["payload"]["buttons"], [[{
+                "type": "callback", "text": "Привязать помещение", "payload": "auth:owner:link",
+            }]])
+
+            api.sent.clear()
+            handle_update(
+                api,
+                {
+                    "update_type": "message_created",
+                    "message": {
+                        "sender": {"user_id": user_id},
+                        "recipient": {"chat_type": "dialog", "user_id": user_id},
+                        "body": {"text": "/request"},
+                    },
+                },
+                phone_store, auth_store, bot_username="smart_city_bot", hoa_store=hoa_store,
+            )
+            self.assertEqual(len(api.sent), 1)
+            self.assertIn("демонстрацион", api.sent[0][0].lower())
+            self.assertIn("/code КОД", api.sent[0][0])
+
+            api.sent.clear()
+            handle_update(
+                api,
+                {
+                    "update_type": "message_callback",
+                    "callback": {"user": {"user_id": user_id}, "payload": "auth:owner:link"},
+                },
+                phone_store, auth_store, bot_username="smart_city_bot", hoa_store=hoa_store,
+            )
+            self.assertEqual(len(api.sent), 1)
+            self.assertIn("/code КОД", api.sent[0][0])
+            state = auth_store.get_state(user_id)
+            self.assertIsNotNone(state)
+            self.assertEqual((state.role, state.step), ("owner", "awaiting_code"))
+
+            auth_store.approve_chairman(
+                user_id=99, phone="+79990000099", full_name="Председатель",
+                space_id="hoa-1", hoa_name="ТСЖ Тест", address="ул. Тестовая, 1",
+                protocol_sha256="test-protocol", protocol_filename="protocol.pdf",
+            )
+            hoa_store.import_registry(
+                "hoa-1", "registry.pdf", b"test-registry",
+                [ResidentEntry("1", "Иванов Иван", "40", "1", "собственность")], [],
+            )
+            code = hoa_store.list_residents("hoa-1")[0]["code"]
+            api.sent.clear()
+            handle_update(
+                api,
+                {
+                    "update_type": "message_created",
+                    "message": {
+                        "sender": {"user_id": user_id},
+                        "recipient": {"chat_type": "dialog", "user_id": user_id},
+                        "body": {"text": f"/code {code}"},
+                    },
+                },
+                phone_store, auth_store, bot_username="smart_city_bot", hoa_store=hoa_store,
+            )
+            self.assertIn("Вход собственника подтверждён", api.sent[0][0])
+            memberships = hoa_store.memberships(user_id)
+            self.assertEqual(len(memberships), 1)
+            self.assertIsNone(auth_store.get_state(user_id))
+
+            api.sent.clear()
+            handle_update(
+                api,
+                {
+                    "update_type": "message_created",
+                    "message": {
+                        "sender": {"user_id": user_id},
+                        "recipient": {"chat_type": "dialog", "user_id": user_id},
+                        "body": {"text": "/request"},
+                    },
+                },
+                phone_store, auth_store, bot_username="smart_city_bot", hoa_store=hoa_store,
+            )
+            self.assertIn("Отправьте описание проблемы", api.sent[0][0])
+            draft = hoa_store.get_quick_draft(user_id)
+            self.assertEqual(draft["stage"], "awaiting_description")
+            self.assertEqual(draft["resident_id"], memberships[0]["resident_id"])
 
     def test_unsigned_special_contact_does_not_unlock_role_buttons(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

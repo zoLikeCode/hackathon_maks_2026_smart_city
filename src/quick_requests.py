@@ -21,10 +21,23 @@ def _buttons(rows: list[list[tuple[str, str]]]) -> list[dict[str, Any]]:
     ]}}]
 
 
-def start_quick_request(api: MaxApi, store: HoaStore, user_id: int) -> None:
+def start_quick_request(
+    api: MaxApi, store: HoaStore, user_id: int, *, role_switch_access: bool = False,
+) -> None:
     memberships = store.memberships(user_id)
     if not memberships:
-        api.send_message("Сначала войдите как собственник: /auth", user_id=user_id)
+        if role_switch_access:
+            api.send_message(
+                "Кнопка «Собственник» открывает демонстрационный кабинет, но не привязывает "
+                "помещение. Для настоящей заявки получите личный код собственника у "
+                "председателя и отправьте /code КОД. После привязки повторите /request.",
+                user_id=user_id,
+            )
+        else:
+            api.send_message(
+                "Сначала войдите как собственник через /auth и привяжите помещение "
+                "по личному коду председателя.", user_id=user_id,
+            )
         return
     store.clear_quick_draft(user_id)
     if len(memberships) == 1:
@@ -92,7 +105,7 @@ def _create(
 def handle_quick_callback(
     api: MaxApi, store: HoaStore | None,
     auth_store: ChairmanAuthorizationRepository | None,
-    user_id: int, payload: str,
+    user_id: int, payload: str, *, role_switch_access: bool = False,
 ) -> bool:
     if not payload.startswith("request:"):
         return False
@@ -100,7 +113,7 @@ def handle_quick_callback(
         api.send_message("Заявки временно недоступны.", user_id=user_id)
         return True
     if payload == "request:new":
-        start_quick_request(api, store, user_id)
+        start_quick_request(api, store, user_id, role_switch_access=role_switch_access)
         return True
     draft = store.get_quick_draft(user_id)
     if payload == "request:cancel":
