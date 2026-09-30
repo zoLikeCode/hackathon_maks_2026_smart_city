@@ -157,6 +157,31 @@ class RequestApiTests(unittest.TestCase):
         self.assertEqual(self.call("/api/session", user_id=500, start_param="role_specialist")[0], 403)
         self.assertEqual(self.call("/api/session", user_id=501, start_param="role_specialist")[0], 200)
 
+    def test_recording_role_blocks_old_launch_buttons_until_phone_step_completes(self):
+        launches = {
+            "owner": "role_owner",
+            "specialist": "role_specialist",
+            "chairman": "role_chairman",
+        }
+        self.authorization.set_state(500, "owner", "recording_demo_awaiting_phone")
+        for launch in launches.values():
+            with self.subTest(stage="awaiting_phone", launch=launch):
+                self.assertEqual(self.call("/api/session", user_id=500, start_param=launch)[0], 403)
+        self.assertEqual(self.call("/api/requests", user_id=500, start_param="role_owner")[0], 403)
+        self.assertEqual(self.call("/api/session", user_id=501, start_param="role_chairman")[0], 200)
+
+        self.authorization.set_state(500, "owner", "recording_demo")
+        self.assertEqual(self.call("/api/session", user_id=500, start_param="role_owner")[0], 200)
+        for launch in ("role_specialist", "role_chairman"):
+            with self.subTest(stage="owner_selected", launch=launch):
+                self.assertEqual(self.call("/api/session", user_id=500, start_param=launch)[0], 403)
+
+        self.authorization.clear_state(500)
+        for role, launch in launches.items():
+            with self.subTest(stage="roles_restored", role=role):
+                status, session, _ = self.call("/api/session", user_id=500, start_param=launch)
+                self.assertEqual((status, session["role"]), (200, role))
+
     def test_real_chairman_and_demo_role_are_distinct(self):
         self.authorization.approve_chairman(
             user_id=500, phone="+79872660500", full_name="Тестовый председатель",

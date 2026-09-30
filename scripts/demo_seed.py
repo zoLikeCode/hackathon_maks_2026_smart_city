@@ -333,10 +333,12 @@ def _calendar_visit(
 
 
 def prepare_demo_connection(
-    connection: Any, *, pipe_photo: bytes, light_photo: bytes,
+    connection: Any, *, role: str, pipe_photo: bytes, light_photo: bytes,
     allow_existing_hoa: bool = False,
 ) -> dict[str, Any]:
     """Prepare all roles in the caller's transaction; safe to repeat for fixtures only."""
+    if role not in {"owner", "specialist", "chairman"}:
+        raise ValueError("Неизвестная роль видеосценария")
     if not isinstance(connection, sqlite3.Connection):
         _execute(connection, "SELECT pg_advisory_xact_lock(9872660500)")
     user_id = _verified_user_id(connection)
@@ -415,6 +417,14 @@ def prepare_demo_connection(
     date_text, hour = _calendar_visit(
         connection, calendar, specialist_id, _timezone(connection, space_id, address), now_text
     )
+    _execute(
+        connection,
+        "INSERT INTO authorization_states(user_id, role, step, updated_at) "
+        "VALUES (%s, %s, 'recording_demo_awaiting_phone', %s) "
+        "ON CONFLICT(user_id) DO UPDATE SET role = excluded.role, "
+        "step = excluded.step, updated_at = excluded.updated_at",
+        (user_id, role, now_text),
+    )
     return {
         "user_id": user_id, "space_id": space_id, "hoa_name": hoa_name,
         "address": address, "unit": DEMO_UNIT, "specialty": specialty,
@@ -445,7 +455,7 @@ def main(role: str) -> None:
         light_photo = (ASSETS / "demo_hall_light.png").read_bytes()
         with psycopg.connect(database_url, connect_timeout=5) as connection:
             result = prepare_demo_connection(
-                connection, pipe_photo=pipe_photo, light_photo=light_photo,
+                connection, role=role, pipe_photo=pipe_photo, light_photo=light_photo,
                 allow_existing_hoa=args.use_existing_hoa,
             )
     except (DemoSetupError, OSError) as error:
@@ -465,7 +475,7 @@ def main(role: str) -> None:
     print(f"Плановый выезд: {result['calendar_date']} в {result['calendar_hour']}:00")
     if role == "chairman":
         print(f"Для формы добавления отдельного демонстрационного специалиста: {DEMO_SPECIALIST_PHONE}")
-    print("Следующий шаг: отправьте /auth в MAX и откройте кнопку нужной роли.")
+    print("Следующий шаг: /auth в MAX → поделиться номером → открыть кабинет подготовленной роли.")
 
 
 if __name__ == "__main__":

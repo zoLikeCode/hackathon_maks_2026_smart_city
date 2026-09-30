@@ -32,7 +32,7 @@ from src.phone_verification import (
 )
 from src.quick_requests import handle_quick_callback, handle_quick_message, start_quick_request
 from src.request_store import create_request_store
-from src.role_access import ROLE_START_PARAMS, has_role_switch_access
+from src.role_access import ROLE_START_PARAMS, ROLE_SWITCH_PHONE, has_role_switch_access
 from src.verification_store import (
     PhoneVerificationRepository,
     create_phone_verification_store,
@@ -49,7 +49,7 @@ HELP_TEXT = (
     "собственнику код. Собственник подтверждает номер и вводит код в чате. "
     "Специалист подтверждает номер, который председатель внесла в список.\n\n"
     "После описания заявки собственник прикрепляет от 1 до 3 фотографий и подтверждает отправку.\n\n"
-    "Команды: /start, /auth, /phone, /code, /request, /cancel, /status, /profile, /help, /ping"
+    "Команды: /start, /auth, /phone, /code, /request, /cancel, /status, /profile, /roles, /help, /ping"
 )
 ROLE_KEYBOARD = [
     {
@@ -223,6 +223,52 @@ def send_role_switch_menu(api: MaxApi, user_id: int, bot_username: str | None) -
     )
 
 
+def send_admin_entry(
+    api: MaxApi,
+    user_id: int,
+    bot_username: str | None,
+    auth_store: ChairmanAuthorizationRepository | None,
+) -> None:
+    """Guide 0500 through a signed contact and the selected filming role."""
+    state = auth_store.get_state(user_id) if auth_store is not None else None
+    labels = {"owner": "собственника", "specialist": "специалиста", "chairman": "председателя"}
+    if state is not None and state.step == "recording_demo_awaiting_phone" and state.role in labels:
+        send_phone_request(api, user_id=user_id)
+        return
+    if state is None or state.step != "recording_demo" or state.role not in labels:
+        send_role_switch_menu(api, user_id, bot_username)
+        return
+    if not bot_username:
+        send_role_switch_menu(api, user_id, bot_username)
+        return
+    start_param = next(key for key, role in ROLE_START_PARAMS.items() if role == state.role)
+    buttons = [[{
+        "type": "open_app",
+        "text": f"Открыть кабинет {labels[state.role]}",
+        "web_app": bot_username.lstrip("@"),
+        "payload": start_param,
+    }]]
+    if state.role == "owner":
+        buttons.append([{
+            "type": "callback", "text": "Создать заявку", "payload": "request:new",
+        }])
+    messages = {
+        "owner": "Демонстрационное помещение ДЕМО-0500 уже привязано. Откройте свои заявки или создайте новую.",
+        "specialist": "Кабинет специалиста готов. Откройте заявки и календарь выездов.",
+        "chairman": "Кабинет председателя готов. Откройте заявки дома и управление ТСЖ.",
+    }
+    api.send_message(
+        messages[state.role],
+        user_id=user_id,
+        attachments=[{"type": "inline_keyboard", "payload": {"buttons": buttons}}],
+    )
+
+
+def awaiting_demo_contact(auth_store: ChairmanAuthorizationRepository | None, user_id: int) -> bool:
+    state = auth_store.get_state(user_id) if auth_store is not None else None
+    return state is not None and state.step == "recording_demo_awaiting_phone"
+
+
 def send_owner_profile(api: MaxApi, user_id: int, memberships: list[dict[str, Any]], bot_username: str | None) -> None:
     places = ", ".join(f"{item['hoa_name']}, пом. {item['unit']}" for item in memberships[:3])
     api.send_message(
@@ -384,14 +430,24 @@ def handle_contact(
         return True
 
     user_id = int(sender_id)
+    state = auth_store.get_state(user_id) if auth_store is not None else None
+    if state is not None and state.step == "recording_demo_awaiting_phone" and phone != ROLE_SWITCH_PHONE:
+        api.send_message(
+            "Для подготовленного сценария поделитесь номером, оканчивающимся на 0500.",
+            **target,
+        )
+        return True
     if phone_store is not None:
         phone_store.save(user_id, phone)
     logger.info("Подтверждён номер для user_id=%s", sender_id)
 
     if has_role_switch_access(phone_store, user_id):
         if auth_store is not None:
-            auth_store.clear_state(user_id)
-        send_role_switch_menu(api, user_id, bot_username)
+            if state is not None and state.step == "recording_demo_awaiting_phone":
+                auth_store.set_state(user_id, state.role, "recording_demo")
+            elif state is None or state.step != "recording_demo":
+                auth_store.clear_state(user_id)
+        send_admin_entry(api, user_id, bot_username, auth_store)
         return True
 
     state = auth_store.get_state(user_id) if auth_store is not None else None
@@ -696,6 +752,9 @@ def handle_callback(
         except (ValueError, OverflowError) as error:
             api.send_message(str(error), user_id=user_id)
         return True
+    if isinstance(payload, str) and payload.startswith(("request:", "auth:")) and awaiting_demo_contact(auth_store, user_id):
+        send_phone_request(api, user_id=user_id)
+        return True
     if isinstance(payload, str) and handle_quick_callback(
         api, hoa_store, auth_store, user_id, payload,
         role_switch_access=has_role_switch_access(phone_store, user_id),
@@ -749,7 +808,7 @@ def handle_update(
         if user_id is not None:
             user_id = int(user_id)
             if has_role_switch_access(store, user_id):
-                send_role_switch_menu(api, user_id, bot_username)
+                send_admin_entry(api, user_id, bot_username, auth_store)
                 return
             profile = auth_store.get_profile_by_user_id(user_id) if auth_store is not None else None
             if profile is not None:
@@ -825,6 +884,9 @@ def handle_update(
     command = text.split(maxsplit=1)[0].lower() if text else ""
     command = command.split("@", 1)[0]
     if command == "/request":
+        if sender_id is not None and awaiting_demo_contact(auth_store, int(sender_id)):
+            send_phone_request(api, user_id=int(sender_id))
+            return
         if sender_id is not None and (message.get("recipient") or {}).get("chat_type") == "dialog" and hoa_store:
             start_quick_request(
                 api, hoa_store, int(sender_id),
@@ -868,7 +930,7 @@ def handle_update(
     if command in {"/start", "/auth"}:
         if sender_id is not None:
             if has_role_switch_access(store, int(sender_id)):
-                send_role_switch_menu(api, int(sender_id), bot_username)
+                send_admin_entry(api, int(sender_id), bot_username, auth_store)
                 return
             profile = (
                 auth_store.get_profile_by_user_id(int(sender_id))
@@ -895,6 +957,16 @@ def handle_update(
             else:
                 send_role_selection(api, int(sender_id))
         return
+    if command == "/roles":
+        if sender_id is not None and has_role_switch_access(store, int(sender_id)):
+            if auth_store is not None:
+                state = auth_store.get_state(int(sender_id))
+                if state is not None and state.step in {"recording_demo", "recording_demo_awaiting_phone"}:
+                    auth_store.clear_state(int(sender_id))
+            send_role_switch_menu(api, int(sender_id), bot_username)
+        else:
+            api.send_message("Выберите доступную роль командой /auth.", **target)
+        return
     if command == "/phone":
         if (message.get("recipient") or {}).get("chat_type") != "dialog":
             response = "Подтвердить номер можно только в личном диалоге с ботом."
@@ -903,7 +975,7 @@ def handle_update(
             return
     elif command in {"/status", "/profile"}:
         if sender_id is not None and has_role_switch_access(store, int(sender_id)):
-            send_role_switch_menu(api, int(sender_id), bot_username)
+            send_admin_entry(api, int(sender_id), bot_username, auth_store)
             return
         profile = (
             auth_store.get_profile_by_user_id(int(sender_id))

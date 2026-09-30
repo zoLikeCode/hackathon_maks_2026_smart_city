@@ -22,7 +22,7 @@ from src.owner_registry import RegistryError, RegistryResult, parse_registry_wit
 from src.phone_verification import ContactVerificationError, masked_phone
 from src.request_store import RequestRepository
 from src.request_notifications import notify_request_changes
-from src.role_access import ROLE_START_PARAMS, has_role_switch_access
+from src.role_access import ROLE_START_PARAMS, ROLE_SWITCH_PHONE, has_role_switch_access
 from src.verification_store import PhoneVerificationRepository
 
 logger = logging.getLogger(__name__)
@@ -179,6 +179,14 @@ class MiniAppServer:
                     if role not in {"specialist", "chairman", "owner"}:
                         self._json(HTTPStatus.FORBIDDEN, {"error": "Выберите роль кнопкой в чате с ботом"})
                         return None
+                    if verification is not None and verification.phone == ROLE_SWITCH_PHONE:
+                        state = repository.get_state(user_id)
+                        if state is not None and state.step == "recording_demo_awaiting_phone":
+                            self._json(HTTPStatus.FORBIDDEN, {"error": "Подтвердите номер в чате с ботом"})
+                            return None
+                        if state is not None and state.step == "recording_demo" and role != state.role:
+                            self._json(HTTPStatus.FORBIDDEN, {"error": "Откройте подготовленный кабинет через чат с ботом"})
+                            return None
                 elif profile is not None:
                     role = "chairman"
                 elif specialist_spaces or (hoa_store is None and user_id in specialist_user_ids):

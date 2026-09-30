@@ -24,10 +24,10 @@ class DemoSeedTests(unittest.TestCase):
             "light_photo": (ASSETS / "demo_hall_light.png").read_bytes(),
         }
 
-    def prepare(self, *, allow_existing_hoa: bool = False) -> dict:
+    def prepare(self, *, role: str = "owner", allow_existing_hoa: bool = False) -> dict:
         with sqlite3.connect(self.path) as connection:
             return prepare_demo_connection(
-                connection, **self.photos, allow_existing_hoa=allow_existing_hoa
+                connection, role=role, **self.photos, allow_existing_hoa=allow_existing_hoa
             )
 
     def test_three_real_roles_photo_calendar_and_user_request_survive_rerun(self) -> None:
@@ -35,6 +35,10 @@ class DemoSeedTests(unittest.TestCase):
         self.phone.save(user_id, PHONE)
         result = self.prepare()
         self.assertEqual(result["user_id"], user_id)
+        self.assertEqual(
+            (self.auth.get_state(user_id).role, self.auth.get_state(user_id).step),
+            ("owner", "recording_demo_awaiting_phone"),
+        )
         self.assertEqual(self.auth.get_profile_by_user_id(user_id).phone, PHONE)
         membership = next(item for item in self.hoa.memberships(user_id)
                           if item["unit"] == "ДЕМО-0500")
@@ -74,8 +78,12 @@ class DemoSeedTests(unittest.TestCase):
         )
         self.hoa.set_specialist_request_status(user_id, PHONE, result["specialist_open"],
                                                "in_progress")
-        rerun = self.prepare()
+        rerun = self.prepare(role="specialist")
         self.assertEqual(rerun["space_id"], result["space_id"])
+        self.assertEqual(
+            (self.auth.get_state(user_id).role, self.auth.get_state(user_id).step),
+            ("specialist", "recording_demo_awaiting_phone"),
+        )
         self.assertEqual(
             next(item for item in self.hoa.list_specialist_requests(user_id, PHONE)
                  if item["request_id"] == result["specialist_open"])["status"], "review"
@@ -84,6 +92,16 @@ class DemoSeedTests(unittest.TestCase):
                       {item["request_id"] for item in self.hoa.list_requests(user_id=user_id)})
         with sqlite3.connect(self.path) as connection:
             self.assertEqual(connection.execute("SELECT count(*) FROM service_requests").fetchone()[0], 5)
+
+        self.prepare(role="chairman")
+        self.assertEqual(
+            (self.auth.get_state(user_id).role, self.auth.get_state(user_id).step),
+            ("chairman", "recording_demo_awaiting_phone"),
+        )
+        self.assertIn(
+            created["request_id"],
+            {item["request_id"] for item in self.hoa.list_requests(user_id=user_id)},
+        )
 
     def test_requires_unique_signed_contact_before_any_changes(self) -> None:
         with self.assertRaisesRegex(DemoSetupError, "не подтверждён"):

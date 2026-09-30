@@ -413,6 +413,94 @@ class BotTests(unittest.TestCase):
         self.assertTrue(verify_contact_signature(token, literal, signature))
         self.assertEqual(extract_phone_from_vcard(literal), "+79991234567")
 
+    def test_recording_role_replaces_admin_menu_until_roles_command(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "test.sqlite3"
+            phones = PhoneVerificationStore(path)
+            auth = SqliteChairmanAuthorizationStore(path)
+            phones.save(42, "+79872660500")
+            auth.set_state(42, "owner", "recording_demo_awaiting_phone")
+
+            def send(command: str) -> FakeApi:
+                api = FakeApi()
+                handle_update(
+                    api,
+                    {"update_type": "message_created", "message": {
+                        "sender": {"user_id": 42},
+                        "recipient": {"chat_type": "dialog", "user_id": 42},
+                        "body": {"text": command},
+                    }},
+                    phones,
+                    auth,
+                    bot_username="smart_city_bot",
+                )
+                return api
+
+            def signed_contact(phone: str) -> FakeApi:
+                token = "test-token"
+                vcard = (
+                    "BEGIN:VCARD\r\nVERSION:3.0\r\n"
+                    f"TEL;TYPE=cell:{phone.lstrip('+')}\r\nFN:Test User\r\nEND:VCARD\r\n"
+                )
+                signature = hmac.new(token.encode(), vcard.encode(), hashlib.sha256).hexdigest()
+                api = FakeApi(token)
+                handle_update(
+                    api,
+                    {"update_type": "message_created", "message": {
+                        "sender": {"user_id": 42},
+                        "recipient": {"chat_type": "dialog", "user_id": 42},
+                        "body": {"attachments": [{
+                            "type": "contact", "payload": {"vcf_info": vcard, "hash": signature},
+                        }]},
+                    }},
+                    phones,
+                    auth,
+                    bot_username="smart_city_bot",
+                )
+                return api
+
+            def buttons(api: FakeApi) -> list[list[dict]]:
+                return api.sent[0][1]["attachments"][0]["payload"]["buttons"]
+
+            self.assertEqual(buttons(send("/auth"))[0][0]["type"], "request_contact")
+            self.assertEqual(buttons(send("/request"))[0][0]["type"], "request_contact")
+            old_request = FakeApi()
+            handle_update(
+                old_request,
+                {"update_type": "message_callback", "callback": {
+                    "user": {"user_id": 42}, "payload": "request:new",
+                }},
+                phones,
+                auth,
+                bot_username="smart_city_bot",
+            )
+            self.assertEqual(buttons(old_request)[0][0]["type"], "request_contact")
+            wrong = signed_contact("+79991234567")
+            self.assertIn("0500", wrong.sent[0][0])
+            self.assertEqual(phones.get(42).phone, "+79872660500")
+            self.assertEqual(auth.get_state(42).step, "recording_demo_awaiting_phone")
+
+            owner_buttons = buttons(signed_contact("+79872660500"))
+            self.assertEqual([row[0]["payload"] for row in owner_buttons],
+                             ["role_owner", "request:new"])
+            self.assertEqual(auth.get_state(42).step, "recording_demo")
+            self.assertEqual([row[0]["payload"] for row in buttons(send("/auth"))],
+                             ["role_owner", "request:new"])
+            self.assertEqual([row[0]["payload"] for row in buttons(signed_contact("+79872660500"))],
+                             ["role_owner", "request:new"])
+
+            for role, payload in (("specialist", "role_specialist"),
+                                  ("chairman", "role_chairman")):
+                auth.set_state(42, role, "recording_demo_awaiting_phone")
+                self.assertEqual(buttons(send("/auth"))[0][0]["type"], "request_contact")
+                self.assertEqual([row[0]["payload"] for row in buttons(signed_contact("+79872660500"))],
+                                 [payload])
+
+            all_roles = buttons(send("/roles"))
+            self.assertEqual([row[0]["payload"] for row in all_roles[:3]],
+                             ["role_specialist", "role_chairman", "role_owner"])
+            self.assertIsNone(auth.get_state(42))
+
 
 
 if __name__ == "__main__":
