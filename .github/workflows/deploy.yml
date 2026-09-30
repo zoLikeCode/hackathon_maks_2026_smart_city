@@ -1,0 +1,80 @@
+name: Deploy to MAX server
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smart-city-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Upload and restart
+        env:
+          DEPLOY_PATH: /opt/smart-city-max-bot
+          SSHPASS: ${{ secrets.DEPLOY_SSH_PASSWORD }}
+        run: |
+          set -euo pipefail
+          [[ -n "$SSHPASS" ]] || { echo 'Missing GitHub Actions secret: DEPLOY_SSH_PASSWORD' >&2; exit 1; }
+
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq sshpass
+
+          umask 077
+          git archive --format=tar.gz --output="$RUNNER_TEMP/release.tar.gz" HEAD
+
+          ssh_options=(
+            -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="$GITHUB_WORKSPACE/.github/deploy_known_hosts"
+            -o PreferredAuthentications=password,keyboard-interactive
+            -o PubkeyAuthentication=no
+            -o NumberOfPasswordPrompts=1
+          )
+          archive="/tmp/smart-city-${GITHUB_SHA}.tar.gz"
+          sshpass -e scp "${ssh_options[@]}" "$RUNNER_TEMP/release.tar.gz" "root@213.171.9.160:$archive"
+
+          path_b64="$(printf '%s' "$DEPLOY_PATH" | base64 -w 0)"
+          sshpass -e ssh "${ssh_options[@]}" root@213.171.9.160 \
+            "DEPLOY_PATH_B64=$path_b64 DEPLOY_SHA=$GITHUB_SHA bash -s" <<'REMOTE'
+          set -euo pipefail
+          app_dir="$(printf '%s' "$DEPLOY_PATH_B64" | base64 -d)"
+          [[ "$app_dir" == /* ]] || { echo 'DEPLOY_PATH must be absolute' >&2; exit 1; }
+          [[ -s "$app_dir/.env" ]] || { echo 'Existing server .env is missing' >&2; exit 1; }
+          [[ -f "$app_dir/compose.yaml" ]] || { echo 'Existing Compose project is missing' >&2; exit 1; }
+
+          staging="$(mktemp -d)"
+          trap 'rm -rf "$staging"' EXIT
+          tar -xzf "/tmp/smart-city-${DEPLOY_SHA}.tar.gz" -C "$staging"
+          [[ -f "$staging/src/bot.py" && -f "$staging/webapp/index.html" && -f "$staging/compose.server.yaml" ]] \
+            || { echo 'Release archive is incomplete' >&2; exit 1; }
+          rm -rf "$app_dir/src" "$app_dir/webapp"
+          cp -a "$staging/." "$app_dir/"
+          cd "$app_dir"
+          docker compose -f compose.yaml -f compose.server.yaml config --quiet
+          docker compose -f compose.yaml -f compose.server.yaml up -d --build
+          docker compose -f compose.yaml -f compose.server.yaml ps
+
+          ready=0
+          for attempt in $(seq 1 30); do
+            if docker compose -f compose.yaml -f compose.server.yaml exec -T bot \
+              python -c 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8080/health", timeout=2)' \
+              >/dev/null 2>&1; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          [[ "$ready" -eq 1 ]] || { echo 'Mini app health check failed' >&2; exit 1; }
+          rm -f "/tmp/smart-city-${DEPLOY_SHA}.tar.gz"
+          REMOTE

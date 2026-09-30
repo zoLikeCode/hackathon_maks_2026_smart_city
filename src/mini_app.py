@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 import time
 from collections import Counter
 from http import HTTPStatus
@@ -19,7 +20,9 @@ from src.hoa_store import HoaStore, timezone_label
 from src.max_api import MaxApi, MaxApiError
 from src.owner_registry import RegistryError, RegistryResult, parse_registry_with_gigachat
 from src.phone_verification import ContactVerificationError, masked_phone
+from src.request_store import RequestRepository
 from src.request_notifications import notify_request_changes
+from src.role_access import ROLE_START_PARAMS, ROLE_SWITCH_PHONE, has_role_switch_access
 from src.verification_store import PhoneVerificationRepository
 
 logger = logging.getLogger(__name__)
@@ -36,7 +39,12 @@ def validate_max_init_data(
     now: int | None = None,
     max_age_seconds: int = 3600,
 ) -> dict[str, Any]:
-    pairs = parse_qsl(init_data, keep_blank_values=True, strict_parsing=True)
+    if not bot_token:
+        raise MiniAppAuthorizationError("Токен бота не настроен")
+    try:
+        pairs = parse_qsl(init_data, keep_blank_values=True, strict_parsing=True)
+    except ValueError as error:
+        raise MiniAppAuthorizationError("Некорректные параметры MAX") from error
     counts = Counter(key for key, _value in pairs)
     if counts.get("hash") != 1 or any(count > 1 for count in counts.values()):
         raise MiniAppAuthorizationError("Некорректный набор параметров MAX")
@@ -64,6 +72,7 @@ def validate_max_init_data(
     if not isinstance(user, dict):
         raise MiniAppAuthorizationError("Некорректный профиль пользователя MAX")
     user["id"] = user_id
+    user["_start_param"] = values.get("start_param")
     return user
 
 
@@ -77,6 +86,9 @@ class MiniAppServer:
         phone_store: PhoneVerificationRepository | None = None,
         gigachat: GigaChatApi | None = None,
         max_api: MaxApi | None = None,
+        request_repository: RequestRepository | None = None,
+        specialist_user_ids: set[int] | frozenset[int] | None = None,
+        phone_repository: PhoneVerificationRepository | None = None,
         host: str = "0.0.0.0",
         port: int = 8080,
         static_dir: Path | None = None,
@@ -87,6 +99,10 @@ class MiniAppServer:
         self._phone_store = phone_store
         self._gigachat = gigachat
         self._max_api = max_api
+        self._request_repository = request_repository
+        self._specialist_user_ids = frozenset(specialist_user_ids or ())
+        if self._phone_store is None:
+            self._phone_store = phone_repository
         self._pending_registry: dict[int, tuple[str, RegistryResult, float]] = {}
         self._registry_lock = Lock()
         self._host = host
@@ -100,6 +116,8 @@ class MiniAppServer:
         bot_token = self._bot_token
         hoa_store = self._hoa_store
         phone_store = self._phone_store
+        request_repository = self._request_repository
+        specialist_user_ids = self._specialist_user_ids
         gigachat = self._gigachat
         max_api = self._max_api
         pending_registry = self._pending_registry
@@ -129,62 +147,183 @@ class MiniAppServer:
                 self._headers(status, "application/json; charset=utf-8")
                 self.wfile.write(body)
 
-            def _user_id(self) -> int | None:
+            def _signed_user(self) -> dict[str, Any] | None:
                 authorization = self.headers.get("Authorization", "")
                 if not authorization.startswith("tma "):
                     self._json(HTTPStatus.UNAUTHORIZED, {"error": "Откройте профиль через MAX"})
                     return None
                 try:
-                    user = validate_max_init_data(authorization[4:], bot_token)
+                    return validate_max_init_data(authorization[4:], bot_token)
                 except MiniAppAuthorizationError as error:
                     self._json(HTTPStatus.UNAUTHORIZED, {"error": str(error)})
                     return None
-                return int(user["id"])
+
+            def _user_id(self) -> int | None:
+                user = self._signed_user()
+                return int(user["id"]) if user is not None else None
+
+            def _role_context(self) -> dict[str, Any] | None:
+                user = self._signed_user()
+                if user is None:
+                    return None
+                user_id = int(user["id"])
+                profile = repository.get_profile_by_user_id(user_id)
+                verification = phone_store.get(user_id) if phone_store else None
+                specialist_spaces = (
+                    hoa_store.specialist_memberships(user_id, verification.phone)
+                    if hoa_store and verification else []
+                )
+                memberships = hoa_store.memberships(user_id) if hoa_store else []
+                if has_role_switch_access(phone_store, user_id):
+                    role = ROLE_START_PARAMS.get(user.get("_start_param"))
+                    if role not in {"specialist", "chairman", "owner"}:
+                        self._json(HTTPStatus.FORBIDDEN, {"error": "Выберите роль кнопкой в чате с ботом"})
+                        return None
+                    if verification is not None and verification.phone == ROLE_SWITCH_PHONE:
+                        state = repository.get_state(user_id)
+                        if state is not None and state.step == "recording_demo_awaiting_phone":
+                            self._json(HTTPStatus.FORBIDDEN, {"error": "Подтвердите номер в чате с ботом"})
+                            return None
+                        if state is not None and state.step == "recording_demo" and role != state.role:
+                            self._json(HTTPStatus.FORBIDDEN, {"error": "Откройте подготовленный кабинет через чат с ботом"})
+                            return None
+                elif profile is not None:
+                    role = "chairman"
+                elif specialist_spaces or (hoa_store is None and user_id in specialist_user_ids):
+                    role = "specialist"
+                elif memberships:
+                    role = "owner"
+                else:
+                    self._json(HTTPStatus.FORBIDDEN, {"error": "Доступ к мини-приложению не подтверждён"})
+                    return None
+                real_access = (
+                    (role == "chairman" and profile is not None)
+                    or (role == "specialist" and bool(specialist_spaces))
+                    or (role == "owner" and bool(memberships))
+                    or (role == "specialist" and hoa_store is None and request_repository is not None)
+                )
+                return {
+                    "user": user, "role": role, "profile": profile,
+                    "verification": verification, "specialist_spaces": specialist_spaces,
+                    "memberships": memberships, "demo_access": not real_access,
+                }
+
+            def _session(self) -> None:
+                context = self._role_context()
+                if context is None:
+                    return
+                user = context["user"]
+                role = context["role"]
+                profile = context["profile"]
+                name = " ".join(str(user.get(key) or "").strip() for key in ("first_name", "last_name")).strip()
+                data: dict[str, Any] = {
+                    "role": role,
+                    "display_name": name or str(user.get("name") or user.get("username") or "Пользователь"),
+                    "user_id": int(user["id"]),
+                }
+                if context["demo_access"]:
+                    data["demo_access"] = True
+                    verification = context["verification"]
+                    if verification is not None:
+                        data["phone"] = masked_phone(verification.phone)
+                elif role == "chairman" and profile is not None:
+                    data.update(
+                        display_name=profile.full_name,
+                        full_name=profile.full_name,
+                        hoa_name=profile.hoa_name,
+                        address=profile.address,
+                        phone=masked_phone(profile.phone),
+                        space_id=profile.space_id,
+                        protocol_filename=profile.protocol_filename,
+                        verified_at=profile.verified_at,
+                    )
+                elif role == "specialist" and context["specialist_spaces"]:
+                    specialist = context["specialist_spaces"][0]
+                    data.update(
+                        display_name=specialist["full_name"],
+                        full_name=specialist["full_name"],
+                        hoa_name=specialist["hoa_name"],
+                        address=specialist["address"],
+                        specialty=specialist["specialty"],
+                        memberships=context["specialist_spaces"],
+                    )
+                elif role == "owner" and context["memberships"]:
+                    owner = context["memberships"][0]
+                    data.update(
+                        display_name=owner["full_name"], full_name=owner["full_name"],
+                        hoa_name=owner["hoa_name"], address=owner["address"],
+                        memberships=context["memberships"],
+                    )
+                self._json(HTTPStatus.OK, data)
 
             def _chairman(self, user_id: int) -> Any | None:
-                profile = repository.get_profile_by_user_id(user_id)
-                if profile is None:
+                context = self._role_context()
+                if context is None:
+                    return None
+                profile = context["profile"]
+                if context["user"]["id"] != user_id or context["role"] != "chairman" or profile is None:
                     self._json(
                         HTTPStatus.FORBIDDEN,
                         {"error": "Доступно только подтверждённому председателю ТСЖ"},
                     )
+                    return None
                 return profile
 
+            @staticmethod
+            def _request_payload(request: dict[str, Any]) -> dict[str, Any]:
+                """Expose the HOA contract and the fields used by the glass workspace."""
+                payload = dict(request)
+                payload.setdefault("id", payload.get("request_id"))
+                payload.setdefault("category", payload.get("specialty") or "Без категории")
+                payload.setdefault("scheduled_for", payload.get("visit_date"))
+                payload.setdefault("assignee", payload.get("specialist_name"))
+                return payload
+
+            @staticmethod
+            def _isolated_request_payload(item: Any) -> dict[str, Any]:
+                payload = item.as_dict()
+                payload.update(
+                    request_id=payload["id"], photo_count=0,
+                    source="mini_app_readonly", read_only=True,
+                )
+                return payload
+
             def _profile(self) -> None:
-                user_id = self._user_id()
-                if user_id is None:
+                context = self._role_context()
+                if context is None:
                     return
-                profile = repository.get_profile_by_user_id(user_id)
-                if profile is None:
-                    verification = phone_store.get(user_id) if phone_store else None
-                    specialist_spaces = (
-                        hoa_store.specialist_memberships(user_id, verification.phone)
-                        if hoa_store and verification else []
-                    )
+                if context["demo_access"]:
+                    self._json(HTTPStatus.FORBIDDEN, {"error": "Для этой роли нет подтверждённого профиля"})
+                    return
+                role = context["role"]
+                if role == "specialist":
+                    specialist_spaces = context["specialist_spaces"]
                     if specialist_spaces:
                         self._json(HTTPStatus.OK, {
                             "role": "specialist", "full_name": specialist_spaces[0]["full_name"],
                             "hoa_name": specialist_spaces[0]["hoa_name"],
                             "address": specialist_spaces[0]["address"],
                             "specialty": specialist_spaces[0]["specialty"],
-                            "phone": masked_phone(verification.phone),
+                            "phone": masked_phone(context["verification"].phone),
                             "memberships": specialist_spaces,
                         })
                         return
-                    memberships = hoa_store.memberships(user_id) if hoa_store else []
-                    if not memberships:
-                        self._json(HTTPStatus.FORBIDDEN, {"error": "Сначала войдите через чат с ботом"})
-                        return
+                if role == "owner":
+                    memberships = context["memberships"]
                     self._json(HTTPStatus.OK, {
                         "role": "owner", "full_name": memberships[0]["full_name"],
                         "hoa_name": memberships[0]["hoa_name"],
                         "address": memberships[0]["address"], "memberships": memberships,
                     })
                     return
+                profile = context["profile"]
+                if profile is None:
+                    self._json(HTTPStatus.FORBIDDEN, {"error": "Профиль председателя не найден"})
+                    return
                 self._json(
                     HTTPStatus.OK,
                     {
-                        "role": "chairman",
+                        "role": "chairman" if hoa_store else "Председатель ТСЖ",
                         "full_name": profile.full_name,
                         "hoa_name": profile.hoa_name,
                         "address": profile.address,
@@ -246,15 +385,19 @@ class MiniAppServer:
                     return
                 parts = path.strip("/").split("/")
                 if len(parts) == 5 and parts[:2] == ["api", "requests"] and parts[3] == "photos":
-                    user_id = self._user_id()
-                    if user_id is None:
+                    context = self._role_context()
+                    if context is None:
                         return
+                    if context["demo_access"]:
+                        self._json(HTTPStatus.FORBIDDEN, {"error": "В деморежиме фотографии недоступны"})
+                        return
+                    user_id = int(context["user"]["id"])
                     try:
                         position = int(parts[4])
                     except ValueError:
                         position = 0
-                    profile = repository.get_profile_by_user_id(user_id)
-                    verification = phone_store.get(user_id) if phone_store else None
+                    profile = context["profile"] if context["role"] == "chairman" else None
+                    verification = context["verification"] if context["role"] == "specialist" else None
                     photo = hoa_store.get_request_photo(
                         user_id, parts[2], position,
                         chairman_space_id=profile.space_id if profile else "",
@@ -265,6 +408,9 @@ class MiniAppServer:
                         return
                     self._headers(HTTPStatus.OK, photo[0])
                     self.wfile.write(photo[1])
+                    return
+                if path == "/api/session":
+                    self._session()
                     return
                 if path == "/api/profile":
                     self._profile()
@@ -286,25 +432,29 @@ class MiniAppServer:
                         self._json(HTTPStatus.OK, {"specialists": hoa_store.list_specialists(profile.space_id)})
                     return
                 if path == "/api/requests":
-                    user_id = self._user_id()
-                    if user_id is None:
+                    context = self._role_context()
+                    if context is None:
                         return
-                    profile = repository.get_profile_by_user_id(user_id)
-                    memberships = hoa_store.memberships(user_id) if hoa_store else []
-                    verification = phone_store.get(user_id) if phone_store else None
-                    specialist_spaces = (
-                        hoa_store.specialist_memberships(user_id, verification.phone)
-                        if hoa_store and verification else []
-                    )
-                    if not profile and not memberships and not specialist_spaces:
-                        self._json(HTTPStatus.FORBIDDEN, {"error": "Сначала войдите через чат"})
-                    elif hoa_store is not None:
-                        if profile:
-                            requests = hoa_store.list_requests(space_id=profile.space_id)
-                        elif specialist_spaces and verification:
-                            requests = hoa_store.list_specialist_requests(user_id, verification.phone)
+                    if context["demo_access"]:
+                        self._json(HTTPStatus.FORBIDDEN, {"error": "Демо-кабинет не содержит реальных заявок"})
+                        return
+                    user_id = int(context["user"]["id"])
+                    role = context["role"]
+                    profile = context["profile"]
+                    verification = context["verification"]
+                    try:
+                        if hoa_store is not None:
+                            if role == "chairman":
+                                requests = hoa_store.list_requests(space_id=profile.space_id)
+                            elif role == "specialist":
+                                requests = hoa_store.list_specialist_requests(user_id, verification.phone)
+                            else:
+                                requests = hoa_store.list_requests(user_id=user_id)
+                        elif request_repository is not None:
+                            requests = []
                         else:
-                            requests = hoa_store.list_requests(user_id=user_id)
+                            self._json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": "Заявки недоступны"})
+                            return
                         chairman_names: dict[str, str] = {}
                         for request in requests:
                             space_id = request["space_id"]
@@ -312,7 +462,27 @@ class MiniAppServer:
                                 chairman = repository.get_profile_by_space_id(space_id)
                                 chairman_names[space_id] = chairman.full_name if chairman else "Председатель"
                             request["chairman_name"] = chairman_names[space_id]
-                        self._json(HTTPStatus.OK, {"requests": requests})
+                        items = [self._request_payload(request) for request in requests]
+                        if request_repository is not None and role == "chairman":
+                            known_ids = {request["id"] for request in items}
+                            try:
+                                isolated = request_repository.list_for_space(profile.space_id)
+                                items.extend(
+                                    self._isolated_request_payload(item)
+                                    for item in isolated
+                                    if re.fullmatch(r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", item.id)
+                                    and item.id not in known_ids
+                                )
+                            except Exception:
+                                logger.exception("Failed to load archived mini-app requests for space %s", profile.space_id)
+                        elif request_repository is not None and hoa_store is None and role == "specialist":
+                            items = [self._isolated_request_payload(item) for item in request_repository.list_all()]
+                        items.sort(key=lambda item: (str(item.get("created_at") or ""), str(item["id"])), reverse=True)
+                    except Exception:
+                        logger.exception("Failed to load service requests for role %s", role)
+                        self._json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": "Не удалось загрузить заявки. Попробуйте ещё раз."})
+                        return
+                    self._json(HTTPStatus.OK, {"requests": items})
                     return
                 self._static(path)
 
@@ -320,11 +490,15 @@ class MiniAppServer:
                 path = urlparse(self.path).path
                 parts = path.strip("/").split("/")
                 if len(parts) == 4 and parts[:2] == ["api", "requests"] and parts[3] == "visit":
-                    user_id = self._user_id()
-                    if user_id is None:
+                    context = self._role_context()
+                    if context is None:
                         return
-                    verification = phone_store.get(user_id) if phone_store else None
-                    if not verification or not hoa_store:
+                    if context["role"] != "specialist" or context["demo_access"]:
+                        self._json(HTTPStatus.FORBIDDEN, {"error": "Доступно назначенному специалисту"})
+                        return
+                    user_id = int(context["user"]["id"])
+                    verification = context["verification"]
+                    if verification is None or hoa_store is None:
                         self._json(HTTPStatus.FORBIDDEN, {"error": "Подтвердите номер специалиста"})
                         return
                     try:
@@ -506,18 +680,16 @@ class MiniAppServer:
                 if len(parts) != 3 or parts[:2] != ["api", "requests"] or not parts[2]:
                     self._json(HTTPStatus.NOT_FOUND, {"error": "Метод недоступен"})
                     return
-                user_id = self._user_id()
-                if user_id is None:
+                context = self._role_context()
+                if context is None:
                     return
-                profile = repository.get_profile_by_user_id(user_id)
-                verification = phone_store.get(user_id) if phone_store else None
-                specialist_spaces = (
-                    hoa_store.specialist_memberships(user_id, verification.phone)
-                    if hoa_store and verification else []
-                )
-                if profile is None and not specialist_spaces:
+                if context["demo_access"] or context["role"] not in {"chairman", "specialist"}:
                     self._json(HTTPStatus.FORBIDDEN, {"error": "Доступно председателю или назначенному специалисту"})
                     return
+                user_id = int(context["user"]["id"])
+                profile = context["profile"] if context["role"] == "chairman" else None
+                verification = context["verification"]
+                specialist_spaces = context["specialist_spaces"] if context["role"] == "specialist" else []
                 data = self._read_json()
                 if data is None:
                     return
@@ -551,7 +723,7 @@ class MiniAppServer:
                             user_id, verification.phone, request_id, **changes,
                         ) if hoa_store and verification else False
                         after = hoa_store.get_request_notification_context(
-                            space["space_id"], request_id,
+                            before["space_id"], request_id,
                         ) if changed and hoa_store and before else None
                 except ValueError as error:
                     self._json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
