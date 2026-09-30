@@ -61,9 +61,9 @@ function applyTheme(theme, remember = false) {
   const resolved = theme === "dark" ? "dark" : "light";
   document.documentElement.dataset.theme = resolved;
   const themeColor = document.querySelector('meta[name="theme-color"]');
-  if (themeColor) themeColor.content = resolved === "dark" ? "#06172B" : "#f8f7fd";
+  if (themeColor) themeColor.content = resolved === "dark" ? "#172331" : "#f5f7fa";
   $$('[data-theme-toggle]').forEach((button) => {
-    button.setAttribute("aria-label", "Тёмная тема");
+    button.setAttribute("aria-label", resolved === "dark" ? "Включить светлую тему" : "Включить тёмную тему");
     button.setAttribute("aria-pressed", String(resolved === "dark"));
     button.title = resolved === "dark" ? "Светлая тема" : "Тёмная тема";
     const icon = button.querySelector(".theme-toggle-icon");
@@ -75,14 +75,10 @@ function applyTheme(theme, remember = false) {
 }
 
 function initializeTheme() {
-  const preference = window.matchMedia("(prefers-color-scheme: dark)");
-  applyTheme(savedTheme() || (preference.matches ? "dark" : "light"));
-  preference.addEventListener?.("change", (event) => {
-    if (!savedTheme()) applyTheme(event.matches ? "dark" : "light");
-  });
+  applyTheme(savedTheme() || "light");
   window.addEventListener("storage", (event) => {
     if (event.key === THEME_STORAGE_KEY) {
-      applyTheme(savedTheme() || (preference.matches ? "dark" : "light"));
+      applyTheme(savedTheme() || "light");
     }
   });
 }
@@ -112,7 +108,7 @@ const countLabel = (count, one, few, many) => {
   const lastTwo = count % 100;
   return count + " " + (last === 1 && lastTwo !== 11 ? one : last >= 2 && last <= 4 && (lastTwo < 12 || lastTwo > 14) ? few : many);
 };
-const numberLabel = (value) => String(value).padStart(2, "0");
+const numberLabel = (value) => String(value);
 const requestCode = (id) => String(id).slice(0, 8).toUpperCase();
 const requestDate = (request) => request.visit_date || request.scheduled_for || null;
 const visitLabel = (request) => request.visit_date
@@ -283,11 +279,11 @@ function rowMarkup(request) {
   const id = escapeHtml(request.id);
   const code = escapeHtml(requestCode(request.id));
   return '<div class="request-row" data-id="' + id + '">'
-    + '<div class="priority-cell"><span class="priority-caption">ПРИОРИТЕТ</span><span class="priority-mark priority-' + escapeHtml(request.priority) + '"></span><select class="priority-select priority-' + escapeHtml(request.priority) + '" data-priority-id="' + id + '" aria-label="Приоритет заявки № ' + code + '"' + (request.read_only || state.session?.demo_access || (request.priority === "emergency" && request.status !== "done") ? ' disabled' : '') + '>' + priorityOptions(request.priority) + '</select></div>'
+    + '<div class="priority-cell"><span class="priority-caption">Приоритет</span><span class="priority-mark priority-' + escapeHtml(request.priority) + '"></span><select class="priority-select priority-' + escapeHtml(request.priority) + '" data-priority-id="' + id + '" aria-label="Приоритет заявки № ' + code + '"' + (request.read_only || state.session?.demo_access || (request.priority === "emergency" && request.status !== "done") ? ' disabled' : '') + '>' + priorityOptions(request.priority) + '</select></div>'
     + '<button type="button" class="request-open" data-open="' + id + '"><span class="request-number"><span class="ticket-code">№ ' + code + '</span><span class="ticket-category">' + escapeHtml(request.category) + '</span></span><strong>' + escapeHtml(request.title) + '</strong></button>'
     + '<div class="address-cell">' + escapeHtml(request.address) + '</div>'
     + '<div class="date-cell">' + (request.scheduled_for ? escapeHtml(dateLabel(request.scheduled_for)) : '<span class="muted">Не назначена</span>') + '</div>'
-    + '<div class="status-cell"><span class="status-caption">СТАТУС</span><span class="status-dot status-' + escapeHtml(request.status) + '"></span>' + escapeHtml(status) + '</div>'
+    + '<div class="status-cell"><span class="status-caption">Статус</span><span class="status-dot status-' + escapeHtml(request.status) + '"></span>' + escapeHtml(status) + '</div>'
     + '<button type="button" class="row-arrow" data-open="' + id + '" aria-label="Открыть заявку № ' + code + '">↗</button>'
     + "</div>";
 }
@@ -295,7 +291,7 @@ function rowMarkup(request) {
 function renderList(items) {
   $("#request-list").innerHTML = items.length
     ? items.map(rowMarkup).join("")
-    : emptyMarkup(state.requests.length ? "Ничего не найдено" : "Заявок пока нет", state.requests.length ? "Измените параметры поиска или сбросьте фильтры." : "Новые обращения появятся здесь после создания председателем.");
+    : emptyMarkup(state.requests.length ? "Ничего не найдено" : "Заявок пока нет", state.requests.length ? "Измените параметры поиска или сбросьте фильтры." : "Новые обращения появятся здесь, когда жители отправят их через MAX.");
 }
 
 function renderOverview() {
@@ -309,7 +305,7 @@ function renderOverview() {
     + '<span class="focus-index">' + String(index + 1).padStart(2, "0") + '</span>'
     + '<span class="focus-content"><span class="focus-meta">№ ' + escapeHtml(requestCode(request.id)) + ' · ' + escapeHtml(request.address) + '</span><strong>' + escapeHtml(request.title) + '</strong><span class="focus-status"><span class="focus-tag focus-priority priority-' + escapeHtml(request.priority) + '">' + escapeHtml(priorityLabel(request.priority)) + '</span><span class="focus-tag focus-workflow status-' + escapeHtml(request.status) + '">' + escapeHtml(statusLabel(request.status)) + '</span><span class="focus-tag focus-date">' + (request.scheduled_for ? escapeHtml(dateLabel(request.scheduled_for)) : 'Без даты') + '</span></span></span>'
     + '<span class="focus-arrow" aria-hidden="true">↗</span></button>'
-  ).join("") : emptyMarkup(state.requests.length ? "Заявок в работе нет" : "Заявок пока нет", state.requests.length ? "Все текущие заявки завершены или отклонены." : "Новые обращения появятся здесь после создания председателем.");
+  ).join("") : emptyMarkup(state.requests.length ? "Заявок в работе нет" : "Заявок пока нет", state.requests.length ? "Все текущие заявки завершены или отклонены." : "Новые обращения появятся здесь, когда жители отправят их через MAX.");
 }
 
 function agendaMarkup(request, undated = false) {
@@ -361,7 +357,7 @@ function renderCalendar(items) {
   const previewItems = (upcoming.length ? upcoming : monthActive.length ? monthActive : monthItems).sort((a, b) =>
     a.scheduled_for.localeCompare(b.scheduled_for) || (PRIORITY[a.priority]?.order ?? 4) - (PRIORITY[b.priority]?.order ?? 4)
   ).slice(0, 3);
-  $("#calendar-mobile-agenda").innerHTML = '<div class="mobile-agenda-head"><span>ПО ДАТАМ</span><span>' + countLabel(monthItems.length, "заявка", "заявки", "заявок") + ' в месяце</span></div>'
+  $("#calendar-mobile-agenda").innerHTML = '<div class="mobile-agenda-head"><span>По датам</span><span>' + countLabel(monthItems.length, "заявка", "заявки", "заявок") + ' в месяце</span></div>'
     + (previewItems.length ? previewItems.map((request) => '<button type="button" class="mobile-agenda-item" data-open="' + escapeHtml(request.id) + '"><span class="mobile-agenda-date"><strong>' + escapeHtml(parseDay(request.scheduled_for).getDate()) + '</strong><small>' + escapeHtml(dateLabel(request.scheduled_for, { month: "short" })) + '</small></span><span class="mobile-agenda-body"><strong>' + escapeHtml(request.title) + '</strong><small>' + escapeHtml(request.address) + ' · ' + escapeHtml(priorityLabel(request.priority)) + (isClosed(request) ? ' · ' + escapeHtml(statusLabel(request.status)) : '') + '</small></span><span class="mobile-agenda-arrow" aria-hidden="true">↗</span></button>').join("") : '<p class="mobile-agenda-empty">Запланированных выездов пока нет.</p>');
   const firstWeekday = (new Date(year, month, 1).getDay() + 6) % 7;
   const lastDay = new Date(year, month + 1, 0).getDate();
@@ -435,7 +431,7 @@ function setView(view) {
   $("#list-view").classList.toggle("hidden", view !== "list");
   $("#calendar-view").classList.toggle("hidden", view !== "calendar");
   $("#board-heading").textContent = view === "list" ? "Заявки" : "Календарь";
-  $("#board-eyebrow").textContent = view === "list" ? "ВСЕ ОБРАЩЕНИЯ / 02" : "ПЛАН ВЫЕЗДОВ / 03";
+  $("#board-eyebrow").textContent = view === "list" ? "Обращения жителей" : "План выездов";
   $("#board-subtitle").textContent = view === "list" ? "Проверьте приоритет, статус и дату выезда." : "Выберите день, чтобы увидеть запланированные задачи.";
   $$("[data-view]").forEach((button) => {
     const active = button.dataset.view === view;
@@ -598,7 +594,7 @@ function loadRequestPhotos(request) {
 
 function syncRequestDialog(request) {
   const role = state.session?.role || "specialist";
-  $("#dialog-id").textContent = "ЗАЯВКА № " + requestCode(request.id);
+  $("#dialog-id").textContent = "Заявка № " + requestCode(request.id);
   $("#dialog-title").textContent = request.title;
   $("#dialog-description").textContent = request.description || "Описание не добавлено.";
   $("#dialog-address").textContent = request.address || "—";
@@ -702,11 +698,11 @@ function renderChairman(profile, requests = []) {
   const role = state.session?.role || profile.role || "chairman";
   const owner = role === "owner";
   $("#chairman").classList.toggle("owner-mode", owner);
-  $(".chairman-header-label").textContent = owner ? "СОБСТВЕННИК" : "ПРЕДСЕДАТЕЛЬ";
+  $(".chairman-header-label").textContent = owner ? "Собственник" : "Председатель";
   $(".chairman-mobile-nav").setAttribute("aria-label", owner ? "Разделы собственника" : "Разделы председателя");
   $$("[data-chairman-only]").forEach((button) => button.classList.toggle("hidden", owner));
   $("#chairman-main-action").classList.toggle("hidden", owner);
-  $("#chairman-requests-heading").innerHTML = owner ? 'Мои заявки<span class="accent">.</span>' : 'Заявки дома<span class="accent">.</span>';
+  $("#chairman-requests-heading").textContent = owner ? "Мои заявки" : "Заявки дома";
   $("#chairman-requests-view .chairman-subtitle").textContent = owner
     ? "Заявки по вашим помещениям. Новую заявку с фотографиями создайте в боте MAX."
     : state.session?.demo_access ? "Демонстрационный кабинет. Создание специалистов здесь показывается без сохранения на сервере."
