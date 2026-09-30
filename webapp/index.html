@@ -3,8 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="color-scheme" content="light dark" />
-    <meta name="theme-color" content="#f5f7fa" />
+    <meta name="color-scheme" content="only light" />
+    <meta name="theme-color" content="#f4f7fb" />
     <title>Умный город — рабочее пространство</title>
     <script>
       (() => {
@@ -12,12 +12,13 @@
         try { saved = localStorage.getItem("smart-city-theme"); } catch (_) { /* storage can be unavailable */ }
         const theme = saved === "dark" ? "dark" : "light";
         document.documentElement.dataset.theme = theme;
-        document.querySelector('meta[name="theme-color"]').content = theme === "dark" ? "#172331" : "#f5f7fa";
+        document.querySelector('meta[name="color-scheme"]').content = theme === "dark" ? "dark" : "only light";
+        document.querySelector('meta[name="theme-color"]').content = theme === "dark" ? "#172331" : "#f4f7fb";
       })();
     </script>
-    <link rel="stylesheet" href="/styles.css?v=civic-5" />
+    <link rel="stylesheet" href="/styles.css?v=civic-6" />
     <script src="https://st.max.ru/js/max-web-app.js"></script>
-    <script src="/app.js?v=civic-4" defer></script>
+    <script src="/app.js?v=civic-5" defer></script>
   </head>
   <body>
     <svg class="icon-sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">

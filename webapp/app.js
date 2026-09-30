@@ -60,8 +60,10 @@ function savedTheme() {
 function applyTheme(theme, remember = false) {
   const resolved = theme === "dark" ? "dark" : "light";
   document.documentElement.dataset.theme = resolved;
+  const colorScheme = document.querySelector('meta[name="color-scheme"]');
+  if (colorScheme) colorScheme.content = resolved === "dark" ? "dark" : "only light";
   const themeColor = document.querySelector('meta[name="theme-color"]');
-  if (themeColor) themeColor.content = resolved === "dark" ? "#172331" : "#f5f7fa";
+  if (themeColor) themeColor.content = resolved === "dark" ? "#172331" : "#f4f7fb";
   $$('[data-theme-toggle]').forEach((button) => {
     button.setAttribute("aria-label", resolved === "dark" ? "Включить светлую тему" : "Включить тёмную тему");
     button.setAttribute("aria-pressed", String(resolved === "dark"));
