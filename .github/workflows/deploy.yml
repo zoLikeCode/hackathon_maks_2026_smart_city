@@ -3,7 +3,7 @@ name: Deploy to MAX server
 on:
   push:
     branches:
-      - feat/specialist-workspace
+      - main
 
 permissions:
   contents: read
